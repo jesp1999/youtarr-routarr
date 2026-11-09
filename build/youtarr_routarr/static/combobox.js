@@ -60,8 +60,12 @@
     const all = options(input);
     const found = showAll ? all : matches(all, text);
     const exact = all.some((o) => o === text);
+    // "Salad Fingers" typed for an existing "Salad Fingers (2004)" is that show, not a new one:
+    // drop the year-less row so only the entry with the year is offered (Enter picks it).
+    const key = text.toLowerCase();
+    const hasYearForm = !!text && all.some((o) => o.toLowerCase().replace(/\s*\(\d{4}\)$/, "") === key && o.toLowerCase() !== key);
     rows = [];
-    if (text && !exact) rows.push({ value: text, isNew: true });
+    if (text && !exact && !hasYearForm) rows.push({ value: text, isNew: true });
     if (text && exact) rows.push({ value: text, isNew: false });
     for (const o of found) if (o !== text) rows.push({ value: o, isNew: false });
     rows = rows.slice(0, MAX_ROWS);
