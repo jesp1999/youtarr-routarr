@@ -193,7 +193,8 @@ def next_episode(cfg: Config, conn: sqlite3.Connection, show: str, season: int =
 
 
 def existing_shows(cfg: Config, conn: sqlite3.Connection) -> list[str]:
-    names = {row["name"] for row in conn.execute("SELECT name FROM shows")}
+    # Folder names (with the year), not bare show names: listing both made every show appear twice.
+    names = {row["folder"] for row in conn.execute("SELECT folder FROM shows")}
     try:
         names |= {child.name for child in cfg.shows_dir.iterdir() if child.is_dir()}
     except OSError:

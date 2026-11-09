@@ -674,3 +674,9 @@ def test_relocate_conflict_leaves_folder_in_place(cfg, conn, tmp_path):
     rc = relocate.main(["--old-shows", str(cfg.shows_dir), "--old-movies", str(cfg.movies_dir), "--apply"], new)
     assert rc == 1 and (cfg.movies_dir / "Film (2021)" / "Film (2021).mp4").exists()
     assert conn.execute("SELECT dest_path FROM filings").fetchone()[0].startswith(str(cfg.movies_dir))
+
+
+def test_existing_shows_lists_each_show_once_with_its_year(cfg, conn):
+    add_video(cfg, "David Firth", "Salad Fingers 1", "AAAAAAAAAAA", date="2004-07-01")
+    file_one(cfg, conn, by_id(cfg)["AAAAAAAAAAA"], Classification("show", "Spoons", show="Salad Fingers", season=1))
+    assert filing.existing_shows(cfg, conn) == ["Salad Fingers (2004)"]
