@@ -1,0 +1,6 @@
+<span id="group-year" class="contents"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {% if new_show %}
+  <label>Show year <span class="tag">new show</span>
+    <input name="show_year" type="number" min="1800" max="2999" value="{{ show_year or '' }}" required></label>
+  {% endif %}
+</span>

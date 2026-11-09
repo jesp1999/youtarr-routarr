@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ total }} unclassified</h1>
+{% if aged %}<p class="warn">{{ aged }} waiting more than {{ ping_days }} days.</p>{% endif %}
+{% if not total %}<p>The queue is empty.</p>{% endif %}
+{% for channel, items in groups %}
+<section>
+  <div class="group-head">
+    <h2>{{ channel }} <small>{{ items|length }}</small></h2>
+    <a class="button" href="{{ url_for('group', key=group_key(channel)) }}">File as a show</a>
+  </div>
+  {% for item in items %}
+  <article class="card" id="card-{{ item.video_id }}">
+    {% if item.thumb %}<img loading="lazy" alt="" src="{{ url_for('thumb', video_id=item.video_id) }}">
+    {% else %}<div class="no-thumb">No thumbnail</div>{% endif %}
+    <div class="body">
+      <h3>{{ item.title }}</h3>
+      <p class="meta">{{ item.upload_date or "No upload date" }} · {{ "%.1f"|format(item.size / 1048576) }} MB{% if not item.has_real_id %} · No YouTube ID{% endif %}</p>
+      {% if item.plot %}<details><summary>Description</summary><p class="plot">{{ item.plot }}</p></details>{% endif %}
+      <form>
+        <fieldset class="types" aria-label="Type">
+          {% for value, label in [("show", "Show episode"), ("movie", "Movie"), ("video", "Video")] %}
+          <label><input type="radio" name="type" value="{{ value }}" {% if value == "video" %}checked{% endif %}
+            hx-get="{{ url_for('fields', video_id=item.video_id) }}" hx-trigger="change"
+            hx-target="#fields-{{ item.video_id }}"> {{ label }}</label>
+          {% endfor %}
+        </fieldset>
+        <div id="fields-{{ item.video_id }}">
+          {% with ctx = field_context(item, "video") %}{% include "_fields_inner.html" %}{% endwith %}
+        </div>
+        <div class="actions">
+          <button type="button" hx-post="{{ url_for('preview', video_id=item.video_id) }}" hx-include="closest form" hx-target="#result-{{ item.video_id }}">Preview</button>
+          <button type="button" class="primary" hx-post="{{ url_for('file_item', video_id=item.video_id) }}" hx-include="closest form" hx-target="#result-{{ item.video_id }}">File</button>
+        </div>
+        <div id="result-{{ item.video_id }}" aria-live="polite"></div>
+      </form>
+    </div>
+  </article>
+  {% endfor %}
+</section>
+{% endfor %}
+{% endblock %}

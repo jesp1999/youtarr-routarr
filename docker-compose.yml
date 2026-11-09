@@ -1,0 +1,48 @@
+name: youtarr-routarr
+services:
+  youtarr-routarr:
+    image: youtarr-routarr:local
+    container_name: youtarr-routarr
+    hostname: youtarr-routarr
+    user: "1000:1000"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    build:
+      context: ./build
+      dockerfile: Dockerfile
+    cap_drop:
+      - ALL
+    env_file:
+      - youtarr-routarr.env
+    environment:
+      TZ: Etc/UTC
+      QUEUE_DIR: /media/youtarr-queue
+      SHOWS_DIR: /media/youtube-shows   # keep apart from libraries Sonarr/Radarr manage
+      MOVIES_DIR: /media/youtube-movies
+      VIDEOS_DIR: /media/videos
+      VIDEOS_SUBDIR: YouTube
+      INFO_DIR: /youtarr-info
+      DB_PATH: /data/youtarr-routarr.sqlite3
+    volumes:
+      # One mount on purpose: link() returns EXDEV across separate bind mounts,
+      # even on the same filesystem, so the queue and libraries cannot be split.
+      - type: bind
+        source: /media
+        target: /media
+      - type: bind
+        source: /path/to/youtarr/jobs/info
+        target: /youtarr-info
+        read_only: true
+      - type: bind
+        source: ./data
+        target: /data
+    tmpfs:
+      - /tmp
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: "268435456" # 256MiB

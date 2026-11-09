@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ channel }} · YoutarrRoutarr{% endblock %}
+{% block content %}
+<h1>File {{ channel }} as a show</h1>
+<p>Sorted by playlist position when known, otherwise by upload date. Check the numbers before filing.</p>
+<form id="group-form">
+  <div class="row">
+    <label class="grow">Show <input name="show" value="{{ show }}" required autocomplete="off"
+      data-combo="all-shows" data-new-label="new show"
+      hx-get="{{ url_for('group_rows', key=key) }}" hx-trigger="change" hx-include="#group-form"
+      hx-target="#group-rows" hx-swap="outerHTML"></label>
+    <label>Season <input name="season" type="number" min="0" value="1" required
+      hx-get="{{ url_for('group_rows', key=key) }}" hx-trigger="change" hx-include="#group-form"
+      hx-target="#group-rows" hx-swap="outerHTML"></label>
+    {% include "_show_year.html" %}
+  </div>
+  <template id="all-shows">{% for show in shows %}<option>{{ show }}</option>{% endfor %}</template>
+  <label>Show description, used for a new show <textarea name="show_plot" rows="2" placeholder="Defaults to the first video's description"></textarea></label>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>File</th><th>Episode</th><th>Title</th><th>Uploaded</th></tr></thead>
+      {% include "_group_rows.html" %}
+    </table>
+  </div>
+  <div class="actions">
+    <button type="button" hx-post="{{ url_for('group_preview', key=key) }}" hx-include="#group-form" hx-target="#group-result">Preview</button>
+    <button type="button" class="primary" hx-post="{{ url_for('group_file', key=key) }}" hx-include="#group-form" hx-target="#group-result">File all selected</button>
+  </div>
+  <div id="group-result" aria-live="polite"></div>
+</form>
+{% endblock %}

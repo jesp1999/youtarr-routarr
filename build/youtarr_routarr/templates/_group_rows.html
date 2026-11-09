@@ -1,0 +1,10 @@
+<tbody id="group-rows">
+  {% for item, episode, title, included in rows %}
+  <tr>
+    <td><input type="checkbox" name="include-{{ item.video_id }}" {% if included %}checked{% endif %} aria-label="Include {{ item.title }}"></td>
+    <td><input class="num" type="number" min="1" name="episode-{{ item.video_id }}" value="{{ episode }}" aria-label="Episode number"></td>
+    <td><input name="title-{{ item.video_id }}" value="{{ title }}" aria-label="Episode title"></td>
+    <td>{{ item.upload_date or "Unknown" }}</td>
+  </tr>
+  {% endfor %}
+</tbody>

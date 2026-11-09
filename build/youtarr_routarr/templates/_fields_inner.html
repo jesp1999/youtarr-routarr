@@ -1,0 +1,34 @@
+{% set item = ctx.item %}
+{% set vid = item.video_id %}
+{% if ctx.kind == "show" %}
+<label>Episode title <input name="title" value="{{ item.title }}" required></label>
+<label>Show
+  <input name="show" value="{{ ctx.show }}" required autocomplete="off"
+    data-combo="shows-{{ vid }}" data-new-label="new show"
+    hx-get="{{ url_for('episode_field', video_id=vid) }}" hx-trigger="change" hx-include="closest form"
+    hx-target="#episode-{{ vid }}" hx-swap="outerHTML">
+</label>
+<template id="shows-{{ vid }}">{% for show in ctx.shows %}<option>{{ show }}</option>{% endfor %}</template>
+<div class="row">
+  <label>Season <input name="season" type="number" min="0" value="1" required
+    hx-get="{{ url_for('episode_field', video_id=vid) }}" hx-trigger="change" hx-include="closest form"
+    hx-target="#episode-{{ vid }}" hx-swap="outerHTML"></label>
+  {% with next_episode = ctx.next_episode, new_show = ctx.new_show, show_year = ctx.show_year %}{% include "_episode.html" %}{% endwith %}
+</div>
+<label>Show description, used for a new show <textarea name="show_plot" rows="2" placeholder="Defaults to this video's description"></textarea></label>
+{% elif ctx.kind == "movie" %}
+<label>Title <input name="title" value="{{ ctx.movie_title }}" required>
+  {% if ctx.movie_title != item.title %}<span class="hint">Shortened from the YouTube title.
+    <button type="button" class="link" onclick="this.closest('label').querySelector('input').value = {{ item.title|tojson|forceescape }}">Use the full title</button></span>{% endif %}
+</label>
+<label>Year <input name="year" type="number" min="1800" max="2999" value="{{ item.year or '' }}" required></label>
+{% else %}
+<label>Folder
+  <span class="path-field"><span class="prefix">{{ ctx.videos_prefix }}/</span>
+  <input name="folder" value="{{ ctx.folder }}" autocomplete="off" placeholder="leave blank for the top level"
+    data-combo="folders-{{ vid }}" data-new-label="new folder"></span>
+</label>
+<template id="folders-{{ vid }}">{% for folder in ctx.folders %}<option>{{ folder }}</option>{% endfor %}</template>
+<label>Name in the Videos library <input name="name" value="{{ item.title }}" required></label>
+<input type="hidden" name="title" value="{{ item.title }}">
+{% endif %}

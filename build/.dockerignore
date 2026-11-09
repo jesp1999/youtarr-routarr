@@ -1,0 +1,5 @@
+*
+!requirements.txt
+!wsgi.py
+!youtarr_routarr
+**/__pycache__

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Filed · YoutarrRoutarr{% endblock %}
+{% block content %}
+<h1>{{ rows|length }} filed</h1>
+{% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+{% if kept %}<div class="error" role="alert"><strong>Undone, but these files were left in place:</strong>
+  <ul>{% for path in kept %}<li><code>{{ path }}</code></li>{% endfor %}</ul></div>{% endif %}
+<p>Undo removes the library copy and returns the video to the queue. Youtarr's copy is never touched.</p>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>Type</th><th>Library path</th><th>Filed</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.type|capitalize }}{% if row.type == "show" %}<br><small>{{ row.show_name }} S{{ "%02d"|format(row.season) }}E{{ "%02d"|format(row.episode) }}</small>{% endif %}</td>
+        <td><code>{{ row.dest_path }}</code></td>
+        <td>{{ row.filed_at[:10] }}</td>
+        <td>
+          <form method="post" action="{{ url_for('undo', video_id=row.video_id) }}" class="inline">
+            <button>Undo</button>
+            <button name="then" value="reclassify">Reclassify</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
