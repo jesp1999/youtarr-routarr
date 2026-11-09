@@ -11,6 +11,7 @@ All three libraries are on `/media`, the same filesystem as the queue.
 | Type | Path |
 |---|---|
 | Show | `youtube-shows/Show (Year)/Season 01/Show - S01E01 - Title.ext`, plus `tvshow.nfo` and `poster.jpg` |
+| Special | `youtube-shows/Show (Year)/Season 00/Show - S00E01 - Title.ext`; Jellyfin lists Season 00 as Specials. Tick **Special** per row on the bulk page (titles containing "special" or "bonus" are pre-ticked). Specials never set the show's year, poster or plot. |
 | Movie | `youtube-movies/Title (Year)/Title (Year).ext`, plus an NFO and `poster.jpg` |
 | Video | `videos/YouTube/<Folder>/Name/Name.ext`, plus an NFO and `poster.jpg`. The folder is a category or channel, picked from existing ones or typed new (nested with `/`, created like `mkdir -p`). |
 

@@ -447,12 +447,19 @@ def _check_paths(plan: Plan) -> None:
 def build_plan(cfg: Config, conn: sqlite3.Connection, pairs: list[tuple[QueueItem, Classification]]) -> Plan:
     plan = Plan()
     roots = {"show": cfg.shows_dir, "movie": cfg.movies_dir, "video": cfg.videos_dir}
+    # Specials (Season 0) never set the show's premiere year, poster or plot: plan them after the
+    # regular episodes, and take the earliest date from regular episodes when there are any.
+    pairs = sorted(pairs, key=lambda pair: pair[1].type == "show" and pair[1].season == 0)
+    regular = {safe_name(c.show or i.playlist or i.channel).casefold() for i, c in pairs
+               if c.type == "show" and c.season != 0 and (c.show or i.playlist or i.channel)}
     earliest: dict[str, str] = {}
     for item, cls in pairs:
         if cls.type == "show":
             try:
                 key = safe_name(cls.show or item.playlist or item.channel).casefold()
             except FilingError:
+                continue
+            if cls.season == 0 and key in regular:
                 continue
             if item.upload_date and (key not in earliest or item.upload_date < earliest[key]):
                 earliest[key] = item.upload_date

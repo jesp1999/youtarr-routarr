@@ -680,3 +680,31 @@ def test_existing_shows_lists_each_show_once_with_its_year(cfg, conn):
     add_video(cfg, "David Firth", "Salad Fingers 1", "AAAAAAAAAAA", date="2004-07-01")
     file_one(cfg, conn, by_id(cfg)["AAAAAAAAAAA"], Classification("show", "Spoons", show="Salad Fingers", season=1))
     assert filing.existing_shows(cfg, conn) == ["Salad Fingers (2004)"]
+
+
+def test_group_specials_go_to_season_zero_and_number_separately(cfg):
+    # The special is the oldest video, yet must not decide the show's year or poster source.
+    add_video(cfg, "Chan", "Bonus Special", "SSSSSSSSSSS", date="2009-01-01")
+    add_video(cfg, "Chan", "First", "AAAAAAAAAAA", date="2010-01-01")
+    add_video(cfg, "Chan", "Second", "BBBBBBBBBBB", date="2011-01-01")
+    from youtarr_routarr import group_key
+    web = client(cfg)
+    key = group_key("Chan")
+    page = web.get(f"/group/{key}").data.decode()  # titles with "special" are pre-ticked
+    assert 'name="special-SSSSSSSSSSS" checked' in page and 'name="special-AAAAAAAAAAA" checked' not in page
+    rows = web.get(f"/group/{key}/rows", query_string={
+        "show": "Chan", "season": "1", "include-SSSSSSSSSSS": "on", "include-AAAAAAAAAAA": "on",
+        "include-BBBBBBBBBBB": "on", "special-SSSSSSSSSSS": "on"}).data.decode()
+    assert 'name="episode-SSSSSSSSSSS" value="1"' in rows
+    assert 'name="episode-AAAAAAAAAAA" value="1"' in rows and 'name="episode-BBBBBBBBBBB" value="2"' in rows
+    data = {"show": "Chan", "season": "1", "include-SSSSSSSSSSS": "on", "include-AAAAAAAAAAA": "on",
+            "include-BBBBBBBBBBB": "on", "special-SSSSSSSSSSS": "on",
+            "episode-SSSSSSSSSSS": "1", "episode-AAAAAAAAAAA": "1", "episode-BBBBBBBBBBB": "2",
+            "title-SSSSSSSSSSS": "Bonus Special", "title-AAAAAAAAAAA": "First", "title-BBBBBBBBBBB": "Second"}
+    assert web.post(f"/group/{key}/file", data=data).status_code == 200
+    show = cfg.shows_dir / "Chan (2010)"
+    assert (show / "Season 00" / "Chan - S00E01 - Bonus Special.mp4").exists()
+    assert (show / "Season 01" / "Chan - S01E01 - First.mp4").exists()
+    assert (show / "Season 01" / "Chan - S01E02 - Second.mp4").exists()
+    assert ET.parse(show / "Season 00" / "Chan - S00E01 - Bonus Special.nfo").getroot().findtext("season") == "0"
+    assert ET.parse(show / "tvshow.nfo").getroot().findtext("premiered") == "2010-01-01"

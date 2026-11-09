@@ -1,9 +1,13 @@
 <tbody id="group-rows">
-  {% for item, episode, title, included in rows %}
+  {% for item, episode, title, included, special in rows %}
   <tr>
     <td><input type="checkbox" name="include-{{ item.video_id }}" {% if included %}checked{% endif %} aria-label="Include {{ item.title }}"></td>
     <td><input class="num" type="number" min="1" name="episode-{{ item.video_id }}" value="{{ episode }}" aria-label="Episode number"></td>
     <td><input name="title-{{ item.video_id }}" value="{{ title }}" aria-label="Episode title"></td>
+    <td><input type="checkbox" name="special-{{ item.video_id }}" {% if special %}checked{% endif %}
+      aria-label="Special: file into Season 0"
+      hx-get="{{ url_for('group_rows', key=key) }}" hx-trigger="change" hx-include="#group-form"
+      hx-target="#group-rows" hx-swap="outerHTML"></td>
     <td>{{ item.upload_date or "Unknown" }}</td>
   </tr>
   {% endfor %}

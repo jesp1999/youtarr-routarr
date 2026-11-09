@@ -39,6 +39,10 @@ def _season_arg(value: str | None) -> int:
     return 1 if season is None or season < 0 else season
 
 
+# Titles that usually mean a Jellyfin "Specials" episode (Season 0). Only a pre-tick the user reviews.
+SPECIAL_TITLE = re.compile(r"\b(?:special|bonus)\b", re.I)
+
+
 def _match_show(name: str, shows: list[str]) -> str:
     """Prefer an existing show such as 'Vsauce (2015)' over a bare channel name."""
     pattern = re.compile(re.escape(name) + r"( \(\d{4}\))?", re.I)
@@ -249,9 +253,14 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
         channel, items = group_items(key)
         shows = existing_shows(cfg, db())
         show = _match_show(channel, shows)
-        first = next_episode(cfg, db(), show, 1)
-        return render_template("group.html", key=key, channel=channel, show=show,
-                               rows=[(item, first + i, item.title, True) for i, item in enumerate(items)],
+        counters = {1: next_episode(cfg, db(), show, 1), 0: next_episode(cfg, db(), show, 0)}
+        rows = []
+        for item in items:
+            special = bool(SPECIAL_TITLE.search(item.title))  # a guess; the user reviews the ticks
+            season = 0 if special else 1
+            rows.append((item, counters[season], item.title, True, special))
+            counters[season] += 1
+        return render_template("group.html", key=key, channel=channel, show=show, rows=rows,
                                shows=shows, dry_run=cfg.dry_run, oob=False,
                                new_show=not show_exists(cfg, db(), show), show_year=_earliest_year(items))
 
@@ -262,19 +271,21 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
         args = request.args
         show = (args.get("show") or "").strip() or channel
         season = _season_arg(args.get("season"))
-        number = next_episode(cfg, db(), show, season)
+        numbers = {season: next_episode(cfg, db(), show, season), 0: next_episode(cfg, db(), show, 0)}
         rows = []
         chosen = [item for item in items if args.get(f"include-{item.video_id}") is not None]
         year = _year_arg(args.get("show_year")) or _earliest_year(chosen or items)
         for item in items:
             included = item in chosen
-            rows.append((item, number if included else "", args.get(f"title-{item.video_id}") or item.title,
-                         included))
+            special = args.get(f"special-{item.video_id}") is not None
+            row_season = 0 if special else season
+            rows.append((item, numbers[row_season] if included else "",
+                         args.get(f"title-{item.video_id}") or item.title, included, special))
             if included:
-                number += 1
+                numbers[row_season] += 1
         # The year field sits above the table, so it is swapped out-of-band. Keep the tbody first:
         # htmx parses inside a <template>, and a leading span makes the parser drop the tbody.
-        return (render_template("_group_rows.html", rows=rows)
+        return (render_template("_group_rows.html", rows=rows, key=key)
                 + render_template("_show_year.html", oob=True, show_year=year,
                                   new_show=not show_exists(cfg, db(), show)))
 
@@ -288,8 +299,9 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
         for item in items:
             if form.get(f"include-{item.video_id}") is None:
                 continue
+            special = form.get(f"special-{item.video_id}") is not None
             pairs.append((item, Classification(
-                type="show", show=show, season=season,
+                type="show", show=show, season=0 if special else season,
                 title=(form.get(f"title-{item.video_id}") or item.title).strip(),
                 episode=_int(form.get(f"episode-{item.video_id}")),
                 show_plot=(form.get("show_plot") or "").strip() or None,
