@@ -708,3 +708,12 @@ def test_group_specials_go_to_season_zero_and_number_separately(cfg):
     assert (show / "Season 01" / "Chan - S01E02 - Second.mp4").exists()
     assert ET.parse(show / "Season 00" / "Chan - S00E01 - Bonus Special.nfo").getroot().findtext("season") == "0"
     assert ET.parse(show / "tvshow.nfo").getroot().findtext("premiered") == "2010-01-01"
+
+
+def test_video_is_linked_after_its_nfo_and_images(cfg, conn, monkeypatch):
+    add_video(cfg, "David Firth", "Salad Fingers 1", "AAAAAAAAAAA", date="2004-07-01", subs=True)
+    order = []
+    real = filing._run_op
+    monkeypatch.setattr(filing, "_run_op", lambda op, *a: (order.append(op.role), real(op, *a))[1])
+    file_one(cfg, conn, by_id(cfg)["AAAAAAAAAAA"], Classification("show", "Spoons", show="Salad Fingers", season=1))
+    assert order[-1] == "video" and order.count("video") == 1

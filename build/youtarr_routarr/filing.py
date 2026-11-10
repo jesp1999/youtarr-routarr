@@ -560,7 +560,9 @@ def apply_plan(cfg: Config, conn: sqlite3.Connection, plan: Plan) -> None:
                 for current in ctx.ops:
                     _run_op(current, ctx.manifest, created, created_dirs)
             for entry in plan.entries:
-                for current in entry.ops:
+                # Video last: Jellyfin's folder monitor can index it the moment it appears, and an NFO
+                # written afterwards is not re-read, leaving the episode without season/episode numbers.
+                for current in sorted(entry.ops, key=lambda op: op.role == "video"):
                     _run_op(current, entry.manifest, created, created_dirs)
         finally:
             os.umask(old_umask)
