@@ -19,7 +19,7 @@
       {% if item.plot %}<details><summary>Description</summary><p class="plot">{{ item.plot }}</p></details>{% endif %}
       <form>
         <fieldset class="types" aria-label="Type">
-          {% for value, label in [("show", "Show episode"), ("movie", "Movie"), ("video", "Video")] %}
+          {% for value, label in [("show", "Show episode"), ("movie", "Movie"), ("video", "Video"), ("music", "Audio")] %}
           <label><input type="radio" name="type" value="{{ value }}" {% if value == "video" %}checked{% endif %}
             hx-get="{{ url_for('fields', video_id=item.video_id) }}" hx-trigger="change"
             hx-target="#fields-{{ item.video_id }}"> {{ label }}</label>

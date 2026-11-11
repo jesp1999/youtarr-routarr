@@ -37,6 +37,11 @@ class QueueItem:
     duration: int | None = None  # seconds
     categories: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
+    # YouTube Music style metadata, present on official audio uploads and "Topic" channels.
+    music_artist: str = ""
+    music_track: str = ""
+    music_album: str = ""
+    release_year: int | None = None
 
     @property
     def ext(self) -> str:
@@ -69,7 +74,8 @@ def _read_info(info_dir: Path | None, video_id: str) -> dict:
     except (OSError, ValueError):
         return {}
     keep = ("title", "description", "upload_date", "channel", "uploader",
-            "playlist", "playlist_title", "playlist_index", "duration", "categories", "tags")
+            "playlist", "playlist_title", "playlist_index", "duration", "categories", "tags",
+            "artist", "track", "album", "release_year", "creator")
     info = {key: raw.get(key) for key in keep}
     _info_cache[str(path)] = (mtime, info)
     return info
@@ -120,6 +126,14 @@ def _sidecars(video: Path, names: list[str]) -> tuple[Path | None, Path | None, 
     subs = [video.with_name(name) for name in sorted(names)
             if name.startswith(stem + ".") and Path(name).suffix.lower() in SUB_EXTS]
     return thumb, fanart, subs
+
+
+def _text(value: object) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _year(value: object) -> int | None:
+    return value if isinstance(value, int) and 1800 <= value <= 2999 else None
 
 
 def _strings(value: object) -> list[str]:
@@ -180,6 +194,10 @@ def _build_item(queue_dir: Path, video: Path, names: list[str], info_dir: Path |
         duration=round(duration) if isinstance(duration, (int, float)) and duration > 0 else None,
         categories=_strings(info.get("categories")),
         tags=_strings(info.get("tags")),
+        music_artist=_text(info.get("artist") or info.get("creator")),
+        music_track=_text(info.get("track")),
+        music_album=_text(info.get("album")),
+        release_year=_year(info.get("release_year")),
     )
 
 

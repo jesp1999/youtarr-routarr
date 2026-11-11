@@ -10,13 +10,13 @@ from flask import Flask, Response, abort, g, make_response, redirect, render_tem
 
 from .config import Config
 from .db import connect
-from .filing import (Classification, FilingError, apply_plan, build_plan, existing_shows,
-                     next_episode, show_exists, suggest_movie_title, undo_filing, video_folders,
+from .filing import (Classification, FilingError, apply_plan, build_plan, existing_artists, existing_shows,
+                     next_episode, show_exists, suggest_movie_title, suggest_music, undo_filing, video_folders,
                      videos_base)
 from .media import QueueItem, scan_queue, sort_key
 from .notify import aged_ids, record_seen, start_worker
 
-TYPES = ("show", "movie", "video")
+TYPES = ("show", "movie", "video", "music")
 _write_lock = threading.Lock()
 
 
@@ -133,6 +133,8 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
                        new_show=not show_exists(cfg, db(), show), show_year=item.year)
         elif kind == "movie":
             ctx.update(movie_title=suggest_movie_title(item.title))
+        elif kind == "music":
+            ctx.update(artists=existing_artists(cfg), **{f"music_{k}": v for k, v in suggest_music(item).items()})
         elif kind == "video":
             folders = video_folders(cfg)
             folder = next((f for f in folders if f.casefold() == item.channel.casefold()), item.channel)
@@ -154,6 +156,9 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
             show_year=_int(form.get("show_year")),
             name=(form.get("name") or "").strip() or None,
             folder=(form.get("folder") or "").strip() or None,
+            artist=(form.get("artist") or "").strip() or None,
+            album=(form.get("album") or "").strip() or None,
+            track=_int(form.get("track")),
         )
 
     def run_plan(pairs_factory, apply: bool, done_target: str | None):
@@ -179,7 +184,8 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
     @app.get("/healthz")
     def healthz():
         problems = [name for name, path in (("queue", cfg.queue_dir), ("shows", cfg.shows_dir),
-                                            ("movies", cfg.movies_dir), ("videos", cfg.videos_dir))
+                                            ("movies", cfg.movies_dir), ("videos", cfg.videos_dir),
+                                            ("music", cfg.music_dir))
                     if not path.is_dir()]
         db().execute("SELECT 1").fetchone()
         if problems:

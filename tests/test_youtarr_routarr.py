@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import errno
 import os
+import shutil
+import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from dataclasses import replace
@@ -45,9 +47,9 @@ def add_video(cfg: Config, channel: str, title: str, vid: str, date: str = "2022
 def cfg(tmp_path: Path) -> Config:
     config = Config(
         queue_dir=tmp_path / "queue", shows_dir=tmp_path / "Shows", movies_dir=tmp_path / "Movies",
-        videos_dir=tmp_path / "Videos", info_dir=tmp_path / "info", db_path=tmp_path / "state" / "t.sqlite3",
+        videos_dir=tmp_path / "Videos", music_dir=tmp_path / "Music", info_dir=tmp_path / "info", db_path=tmp_path / "state" / "t.sqlite3",
         dry_run=False, auth_disabled=True)
-    for path in (config.queue_dir, config.shows_dir, config.movies_dir, config.videos_dir,
+    for path in (config.queue_dir, config.shows_dir, config.movies_dir, config.videos_dir, config.music_dir,
                  config.info_dir, config.db_path.parent):
         path.mkdir()
     return config
@@ -717,3 +719,164 @@ def test_video_is_linked_after_its_nfo_and_images(cfg, conn, monkeypatch):
     monkeypatch.setattr(filing, "_run_op", lambda op, *a: (order.append(op.role), real(op, *a))[1])
     file_one(cfg, conn, by_id(cfg)["AAAAAAAAAAA"], Classification("show", "Spoons", show="Salad Fingers", season=1))
     assert order[-1] == "video" and order.count("video") == 1
+
+
+# --- Audio filing -----------------------------------------------------------------------------
+
+needs_ffmpeg = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")),
+                                  reason="ffmpeg is not installed")
+
+
+def make_audio_video(path: Path, codec: str = "aac") -> None:
+    """A real one-second video with a tone, so ffprobe and ffmpeg have something to read."""
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=black:s=64x64:d=1",
+                    "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:v", "mpeg4", "-c:a", codec,
+                    "-shortest", str(path)], check=True)
+
+
+def tags(path: Path) -> dict[str, str]:
+    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format_tags", "-of", "json", str(path)],
+                         capture_output=True, text=True, check=True).stdout
+    import json
+    return {k.lower(): v for k, v in json.loads(out).get("format", {}).get("tags", {}).items()}
+
+
+def music_item(cfg, title="Song", channel="Chan", vid="mmmmmmmmmmm", **info):
+    video = add_video(cfg, channel, title, vid)
+    make_audio_video(video)
+    if info:
+        import json
+        (cfg.info_dir / f"{vid}.info.json").write_text(json.dumps(info))
+    return by_id(cfg)[vid]
+
+
+def test_suggest_music_prefers_youtube_music_fields(cfg):
+    from youtarr_routarr.media import QueueItem
+    from youtarr_routarr.filing import suggest_music
+    base = dict(video_id="x", has_real_id=True, path=Path("x.mp4"), channel="Artist - Topic")
+    rich = QueueItem(title="whatever", music_artist="Real Artist", music_track="Real Track",
+                     music_album="Real Album", release_year=2019, year=2021, **base)
+    assert suggest_music(rich) == {"artist": "Real Artist", "title": "Real Track", "album": "Real Album", "year": 2019}
+    topic = QueueItem(title="Plain Song", year=2020, **base)
+    assert suggest_music(topic) == {"artist": "Artist", "title": "Plain Song", "album": "Singles", "year": 2020}
+    dashed = QueueItem(title="Some Band - Big Hit (Official Video)", **{**base, "channel": "VEVO"})
+    assert suggest_music(dashed)["artist"] == "Some Band"
+    assert suggest_music(dashed)["title"] == "Big Hit"
+    keep = QueueItem(title="Jay-Z - Run This (feat. Kanye)", **{**base, "channel": "VEVO"})
+    assert suggest_music(keep)["title"] == "Run This (feat. Kanye)"
+    named = QueueItem(title="Band - Song", music_artist="Band", **{**base, "channel": "x"})
+    assert suggest_music(named)["title"] == "Song"
+    plain = QueueItem(title="A Title - With Dash", music_artist="Other", **{**base, "channel": "x"})
+    assert suggest_music(plain)["title"] == "A Title - With Dash"
+
+
+@needs_ffmpeg
+def test_file_music_extracts_tagged_audio_and_leaves_source(cfg, conn):
+    item = music_item(cfg)
+    source_before = item.path.read_bytes()
+    cls = Classification(type="music", title="Big Hit", artist="Some Band", album="First Album", track=3, year=2019)
+    plan = build_plan(cfg, conn, [(item, cls)])
+    assert plan.ok, plan.errors
+    dest = cfg.music_dir / "Some Band" / "First Album" / "03 - Big Hit.m4a"
+    assert plan.entries[0].dest == dest and not dest.exists()  # planning writes nothing
+    apply_plan(cfg, conn, plan)
+    assert dest.is_file() and dest.stat().st_size > 0
+    assert tree(cfg.music_dir) == {"Some Band", "Some Band/First Album", "Some Band/First Album/03 - Big Hit.m4a"}
+    found = tags(dest)
+    assert found["title"] == "Big Hit" and found["artist"] == "Some Band"
+    assert found["album"] == "First Album" and found["album_artist"] == "Some Band"
+    assert found["track"] == "3" and found["date"] == "2019"
+    probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0",
+                            str(dest)], capture_output=True, text=True).stdout.split()
+    assert probe == ["audio"]
+    assert item.path.read_bytes() == source_before
+    row = conn.execute("SELECT * FROM filings WHERE video_id = ?", (item.video_id,)).fetchone()
+    assert row["type"] == "music" and row["dest_path"] == str(dest)
+    assert item.video_id not in by_id_pending(cfg, conn)
+
+
+def by_id_pending(cfg, conn):
+    filed = {row["video_id"] for row in conn.execute("SELECT video_id FROM filings")}
+    return {i.video_id for i in scan_queue(cfg.queue_dir, cfg.info_dir) if i.video_id not in filed}
+
+
+@needs_ffmpeg
+def test_music_undo_removes_audio_and_empty_folders(cfg, conn):
+    item = music_item(cfg)
+    file_one(cfg, conn, item, Classification(type="music", title="Song", artist="Band", album="Album"))
+    assert undo_filing(cfg, conn, item.video_id) == []
+    assert tree(cfg.music_dir) == set()
+    assert item.path.exists()
+
+
+@needs_ffmpeg
+def test_music_reuses_folders_case_insensitively_and_never_overwrites(cfg, conn):
+    first = music_item(cfg, title="One", vid="aaaaaaaaaa1")
+    second = music_item(cfg, title="Two", vid="aaaaaaaaaa2")
+    file_one(cfg, conn, first, Classification(type="music", title="Same", artist="Band", album="Album"))
+    plan = build_plan(cfg, conn, [(second, Classification(type="music", title="Other", artist="BAND", album="album"))])
+    assert plan.ok
+    assert plan.entries[0].dest == cfg.music_dir / "Band" / "Album" / "Other.m4a"
+    clash = build_plan(cfg, conn, [(second, Classification(type="music", title="Same", artist="band", album="ALBUM"))])
+    assert any("Already exists" in e for e in clash.errors)
+
+
+@needs_ffmpeg
+def test_music_requires_artist_and_album_and_valid_track(cfg, conn):
+    item = music_item(cfg)
+    for cls in (Classification(type="music", title="S", album="A"),
+                Classification(type="music", title="S", artist="B"),
+                Classification(type="music", title="S", artist="B", album="A", track=0)):
+        assert not build_plan(cfg, conn, [(item, cls)]).ok
+
+
+@needs_ffmpeg
+def test_music_failed_extraction_rolls_back(cfg, conn, monkeypatch):
+    item = music_item(cfg)
+    plan = build_plan(cfg, conn, [(item, Classification(type="music", title="S", artist="B", album="A"))])
+    assert plan.ok
+    item.path.write_bytes(b"not a video")  # ffprobe passed at plan time; ffmpeg now fails
+    with pytest.raises(FilingError, match="ffmpeg could not extract"):
+        apply_plan(cfg, conn, plan)
+    assert tree(cfg.music_dir) == set()
+    assert conn.execute("SELECT COUNT(*) FROM filings").fetchone()[0] == 0
+
+
+def test_music_rejects_unreadable_audio(cfg, conn):
+    video = add_video(cfg, "Chan", "Broken", "bbbbbbbbbbb")
+    plan = build_plan(cfg, conn, [(by_id(cfg)["bbbbbbbbbbb"],
+                                   Classification(type="music", title="S", artist="B", album="A"))])
+    assert not plan.ok and video.exists()
+
+
+def test_filings_table_migrates_to_allow_music(tmp_path):
+    import sqlite3
+    path = tmp_path / "old.sqlite3"
+    old = sqlite3.connect(path)
+    old.executescript("""CREATE TABLE filings (video_id TEXT PRIMARY KEY,
+        type TEXT NOT NULL CHECK (type IN ('show', 'movie', 'video')), source_path TEXT NOT NULL,
+        dest_path TEXT NOT NULL, show_id INTEGER, season INTEGER, episode INTEGER,
+        metadata TEXT NOT NULL, manifest TEXT NOT NULL, filed_at TEXT NOT NULL);
+        INSERT INTO filings VALUES ('v1', 'video', 's', 'd', NULL, NULL, NULL, '{}', '{}', 't');""")
+    old.commit()
+    old.close()
+    migrated = connect(path)
+    assert migrated.execute("SELECT video_id FROM filings").fetchone()[0] == "v1"
+    migrated.execute("INSERT INTO filings VALUES ('v2', 'music', 's', 'd', NULL, NULL, NULL, '{}', '{}', 't')")
+    migrated.close()
+    connect(path).close()  # already migrated: a second connect changes nothing
+
+
+@needs_ffmpeg
+def test_music_form_prefills_and_files_over_http(cfg):
+    item = music_item(cfg, title="Band - Big Hit (Official Video)", channel="VEVO", vid="hhhhhhhhhhh",
+                      album="The Album", release_year=2018)
+    app = create_app(cfg, start_background=False)
+    web = app.test_client()
+    page = web.get(f"/item/{item.video_id}/fields?type=music").get_data(as_text=True)
+    assert 'value="Band"' in page and 'value="Big Hit"' in page
+    assert 'value="The Album"' in page and 'value="2018"' in page
+    posted = web.post(f"/item/{item.video_id}/file", data={
+        "type": "music", "artist": "Band", "album": "The Album", "title": "Big Hit", "year": "2018", "track": ""})
+    assert posted.status_code == 200 and "Filed 1 video" in posted.get_data(as_text=True)
+    assert (cfg.music_dir / "Band" / "The Album" / "Big Hit.m4a").is_file()

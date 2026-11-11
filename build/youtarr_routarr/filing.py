@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
 import unicodedata
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -86,7 +87,7 @@ def _xml(root_tag: str, fields: list[tuple[str, object]], video_id: str | None) 
 
 @dataclass
 class Classification:
-    type: str  # show | movie | video
+    type: str  # show | movie | video | music
     title: str
     year: int | None = None
     show: str | None = None
@@ -96,15 +97,19 @@ class Classification:
     show_year: int | None = None  # new shows only; defaults to the earliest upload year
     name: str | None = None  # video only
     folder: str | None = None  # video only: subfolder path under the Videos subdir, "/"-separated
+    artist: str | None = None  # music only
+    album: str | None = None  # music only
+    track: int | None = None  # music only: optional track number
 
 
 @dataclass
 class Op:
-    kind: str  # link | write
+    kind: str  # link | write | extract
     dst: Path
     role: str
     src: Path | None = None
     data: bytes | None = None
+    tags: dict[str, object] | None = None  # extract only: audio tags to write
 
 
 @dataclass
@@ -241,18 +246,122 @@ def video_folders(cfg: Config, max_depth: int = 3) -> list[str]:
     return found
 
 
+def _reuse_dir(parent: Path, name: str) -> Path:
+    """An existing child folder matching case-insensitively, else the path a new one would have."""
+    try:
+        match = next((c for c in parent.iterdir() if c.is_dir() and c.name.casefold() == name.casefold()), None)
+    except OSError:
+        match = None
+    return match or parent / name
+
+
 def resolve_video_folder(cfg: Config, raw: str | None) -> Path:
     """Map a typed subfolder onto existing folders case-insensitively, so 'vsauce' reuses 'Vsauce'."""
     current = videos_base(cfg)
     for part in _subpath_parts(raw):
-        match = None
+        current = _reuse_dir(current, part)
+    return current
+
+
+def existing_artists(cfg: Config) -> list[str]:
+    try:
+        names = [child.name for child in cfg.music_dir.iterdir() if child.is_dir()]
+    except OSError:
+        return []
+    return sorted(names, key=str.casefold)
+
+
+# "Artist - Title", with any dash. A bare hyphen stays, so "Jay-Z" is not split.
+ARTIST_SPLIT = re.compile(r"\s[-–—]\s")
+TOPIC_SUFFIX = re.compile(r"\s*-\s*Topic$", re.I)
+# Bracketed video-only labels such as "(Official Video)" or "[Lyrics]". Other brackets stay: "(feat. X)".
+TRACK_NOISE = re.compile(
+    r"\s*[(\[]\s*(?:official|lyrics?|lyric video|audio|music video|video|hd|hq|4k|visuali[sz]er)\b[^)\]]*[)\]]",
+    re.I)
+
+
+def suggest_music(item: QueueItem) -> dict[str, object]:
+    """Artist, track, album and year to prefill the form, from YouTube's music fields when it has them.
+
+    Falls back to "Artist - Title" in the video title, then to the channel (minus " - Topic").
+    Every value is only a suggestion the user reviews.
+    """
+    title = unicodedata.normalize("NFKC", item.title or "")
+    artist, track = item.music_artist, item.music_track
+    left = right = None
+    parts = ARTIST_SPLIT.split(title, maxsplit=1)
+    if len(parts) == 2 and parts[0].strip() and parts[1].strip():
+        left, right = parts[0].strip(), parts[1].strip()
+    if not artist:
+        artist = left if left else TOPIC_SUFFIX.sub("", item.channel).strip()
+    if not track:
+        # Drop an "Artist - " prefix only when it names the artist; otherwise the dash is part of the title.
+        track = right if left and left.casefold() == artist.casefold() else title
+    track = TRACK_NOISE.sub("", track).strip() or track
+    return {
+        "artist": artist,
+        "title": track,
+        "album": item.music_album or item.playlist or "Singles",
+        "year": item.release_year or item.year,
+    }
+
+
+AUDIO_EXT = {"aac": ".m4a", "alac": ".m4a", "opus": ".opus", "vorbis": ".ogg", "mp3": ".mp3", "flac": ".flac"}
+FFMPEG_TIMEOUT = 600
+
+
+def audio_ext(path: Path) -> str:
+    """File extension for the video's first audio stream, which is copied rather than re-encoded."""
+    try:
+        done = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name",
+             "-of", "csv=p=0", str(path)], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise FilingError(f"Cannot run ffprobe to check the audio: {exc}") from exc
+    codec = done.stdout.strip().split(",")[0].lower()
+    if not codec:
+        raise FilingError(f"No audio stream found in {path.name}")
+    if codec not in AUDIO_EXT:
+        raise FilingError(f"Cannot save {codec} audio without re-encoding it: {path.name}")
+    return AUDIO_EXT[codec]
+
+
+def _clean_tag(value: object) -> str:
+    return "".join(ch for ch in str(value) if unicodedata.category(ch)[0] != "C").strip()
+
+
+def _extract_audio(op: Op) -> str:
+    """Copy the audio stream into a hidden temp file, then link it into place. Returns its sha256.
+
+    The link fails if the destination exists, so nothing is ever overwritten, and the file only
+    appears under its real name once it is complete.
+    """
+    tmp = op.dst.with_name(f".{op.dst.stem}.partial{op.dst.suffix}")
+    command = ["ffmpeg", "-nostdin", "-n", "-loglevel", "error", "-i", str(op.src),
+               "-map", "0:a:0", "-vn", "-c:a", "copy", "-map_metadata", "-1"]
+    for key, value in (op.tags or {}).items():
+        if value not in (None, ""):
+            command += ["-metadata", f"{key}={_clean_tag(value)}"]
+    command.append(str(tmp))
+    try:
         try:
-            match = next((c for c in current.iterdir() if c.is_dir() and c.name.casefold() == part.casefold()),
-                         None)
+            done = subprocess.run(command, capture_output=True, text=True, timeout=FFMPEG_TIMEOUT)
+        except subprocess.TimeoutExpired as exc:
+            raise FilingError(f"ffmpeg took longer than {FFMPEG_TIMEOUT} s on {op.src.name}") from exc
+        if done.returncode != 0:
+            detail = (done.stderr.strip().splitlines() or ["no output"])[-1]
+            raise FilingError(f"ffmpeg could not extract the audio from {op.src.name}: {detail}")
+        digest = hashlib.sha256()
+        with open(tmp, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+        os.link(tmp, op.dst, follow_symlinks=False)
+        return digest.hexdigest()
+    finally:
+        try:
+            tmp.unlink()
         except OSError:
             pass
-        current = match or current / part
-    return current
 
 
 def show_exists(cfg: Config, conn: sqlite3.Connection, raw: str) -> bool:
@@ -422,12 +531,34 @@ def _plan_single_folder(entry: Entry, base: str, parent: Path | None = None) -> 
     ]
 
 
+def _plan_music(entry: Entry) -> None:
+    """Music: <Music>/<Artist>/<Album>/[NN - ]<Title>.ext, audio only, tagged for Jellyfin."""
+    item, cls = entry.item, entry.cls
+    artist, album = (cls.artist or "").strip(), (cls.album or "").strip()
+    if not artist:
+        raise FilingError("Artist is required.")
+    if not album:
+        raise FilingError("Album is required.")
+    if cls.track is not None and cls.track < 1:
+        raise FilingError("Track number must be 1 or higher")
+    ext = audio_ext(item.path)
+    folder = _reuse_dir(_reuse_dir(entry.root, safe_name(artist)), safe_name(album))
+    stem = safe_name(cls.title)
+    if cls.track:
+        stem = f"{cls.track:02d} - {stem}"
+    entry.dest = folder / f"{stem}{ext}"
+    entry.ops = [Op("extract", entry.dest, "audio", src=item.path, tags={
+        "title": cls.title, "artist": artist, "album_artist": artist, "album": album,
+        "track": cls.track, "date": cls.year or item.release_year or item.year,
+    })]
+
+
 def _check_paths(plan: Plan) -> None:
     seen: set[Path] = set()
     for entry in plan.entries:
         for op in entry.ops:
-            if op.src is None:
-                continue
+            if op.src is None or op.kind != "link":
+                continue  # only hardlinks need a shared filesystem
             try:
                 same = os.stat(op.src).st_dev == os.stat(entry.root).st_dev
             except OSError as exc:
@@ -446,7 +577,8 @@ def _check_paths(plan: Plan) -> None:
 
 def build_plan(cfg: Config, conn: sqlite3.Connection, pairs: list[tuple[QueueItem, Classification]]) -> Plan:
     plan = Plan()
-    roots = {"show": cfg.shows_dir, "movie": cfg.movies_dir, "video": cfg.videos_dir}
+    roots = {"show": cfg.shows_dir, "movie": cfg.movies_dir, "video": cfg.videos_dir,
+             "music": cfg.music_dir}
     # Specials (Season 0) never set the show's premiere year, poster or plot: plan them after the
     # regular episodes, and take the earliest date from regular episodes when there are any.
     pairs = sorted(pairs, key=lambda pair: pair[1].type == "show" and pair[1].season == 0)
@@ -483,6 +615,8 @@ def build_plan(cfg: Config, conn: sqlite3.Connection, pairs: list[tuple[QueueIte
                     raise FilingError(f"'{cls.title}' has no upload date; enter a year.")
                 cls.year = year
                 _plan_single_folder(entry, f"{safe_name(cls.title)} ({year})")
+            elif cls.type == "music":
+                _plan_music(entry)
             else:
                 _plan_single_folder(entry, safe_name(cls.name or cls.title),
                                     resolve_video_folder(cfg, cls.folder))
@@ -509,7 +643,11 @@ def _run_op(op: Op, manifest: dict, created: list[Path], created_dirs: list[str]
     before = len(created_dirs)
     _mkdirs(op.dst.parent, created_dirs)
     manifest["dirs"].extend(created_dirs[before:])
-    if op.kind == "link":
+    if op.kind == "extract":
+        digest = _extract_audio(op)
+        created.append(op.dst)
+        manifest["files"].append({"path": str(op.dst), "kind": "write", "role": op.role, "sha256": digest})
+    elif op.kind == "link":
         os.link(op.src, op.dst, follow_symlinks=False)
         created.append(op.dst)
         manifest["files"].append({"path": str(op.dst), "kind": "link", "role": op.role,
@@ -580,6 +718,8 @@ def apply_plan(cfg: Config, conn: sqlite3.Connection, plan: Plan) -> None:
                     "plot": entry.item.plot, "upload_date": entry.item.upload_date,
                     "channel": entry.item.channel,
                 }
+                if entry.cls.type == "music":
+                    metadata.update(artist=entry.cls.artist, album=entry.cls.album, track=entry.cls.track)
                 conn.execute(
                     "INSERT INTO filings (video_id, type, source_path, dest_path, show_id, season,"
                     " episode, metadata, manifest, filed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",

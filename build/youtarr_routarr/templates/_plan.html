@@ -9,7 +9,7 @@
   {% if requested and dry_run %}<p><strong>Dry run:</strong> this is what would be written. Nothing changed.</p>
   {% else %}<p><strong>Preview:</strong> these files would be created.</p>{% endif %}
   <ul>
-    {% for op in plan.all_ops() %}<li><span class="tag">{{ "hardlink" if op.kind == "link" else "write" }}</span> <code>{{ op.dst }}</code></li>{% endfor %}
+    {% for op in plan.all_ops() %}<li><span class="tag">{{ {"link": "hardlink", "extract": "extract audio"}.get(op.kind, "write") }}</span> <code>{{ op.dst }}</code></li>{% endfor %}
   </ul>
 </div>
 {% endif %}

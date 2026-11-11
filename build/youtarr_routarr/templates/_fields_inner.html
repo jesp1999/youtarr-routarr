@@ -22,6 +22,22 @@
     <button type="button" class="link" onclick="this.closest('label').querySelector('input').value = {{ item.title|tojson|forceescape }}">Use the full title</button></span>{% endif %}
 </label>
 <label>Year <input name="year" type="number" min="1800" max="2999" value="{{ item.year or '' }}" required></label>
+{% elif ctx.kind == "music" %}
+<label>Artist
+  <input name="artist" value="{{ ctx.music_artist }}" required autocomplete="off"
+    data-combo="artists-{{ vid }}" data-new-label="new artist">
+</label>
+<template id="artists-{{ vid }}">{% for artist in ctx.artists %}<option>{{ artist }}</option>{% endfor %}</template>
+<label>Album <input name="album" value="{{ ctx.music_album }}" required></label>
+<label>Title <input name="title" value="{{ ctx.music_title }}" required>
+  {% if ctx.music_title != item.title %}<span class="hint">Cleaned from the YouTube title.
+    <button type="button" class="link" onclick="this.closest('label').querySelector('input').value = {{ item.title|tojson|forceescape }}">Use the full title</button></span>{% endif %}
+</label>
+<div class="row">
+  <label>Track <input name="track" type="number" min="1" placeholder="optional"></label>
+  <label>Year <input name="year" type="number" min="1800" max="2999" value="{{ ctx.music_year or '' }}" placeholder="optional"></label>
+</div>
+<span class="hint">Saves the audio only, copied from the video without re-encoding. Youtarr's copy of the video is not touched.</span>
 {% else %}
 <label>Folder
   <span class="path-field"><span class="prefix">{{ ctx.videos_prefix }}/</span>

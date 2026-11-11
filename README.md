@@ -1,8 +1,8 @@
 # YoutarrRoutarr
 
 LAN-only triage for Youtarr downloads, routing each one to a library. Each download is classified as a Show
-episode, a Movie or a named Video, then hardlinked into the matching Jellyfin library with an
-NFO and thumbnail. The app never moves, changes or deletes Youtarr's copy.
+episode, a Movie, a named Video or Audio, then hardlinked into the matching Jellyfin library with an
+NFO and thumbnail. Audio is the exception: it is extracted into the Music library. The app never moves, changes or deletes Youtarr's copy.
 
 ## Layouts
 
@@ -14,6 +14,7 @@ All three libraries are on `/media`, the same filesystem as the queue.
 | Special | `youtube-shows/Show (Year)/Season 00/Show - S00E01 - Title.ext`; Jellyfin lists Season 00 as Specials. Tick **Special** per row on the bulk page (titles containing "special" or "bonus" are pre-ticked). Specials never set the show's year, poster or plot. |
 | Movie | `youtube-movies/Title (Year)/Title (Year).ext`, plus an NFO and `poster.jpg` |
 | Video | `videos/YouTube/<Folder>/Name/Name.ext`, plus an NFO and `poster.jpg`. The folder is a category or channel, picked from existing ones or typed new (nested with `/`, created like `mkdir -p`). |
+| Audio | `music/Artist/Album/[NN - ]Title.ext`. Only the audio stream is copied out of the video (no re-encoding, so `.m4a`, `.opus`, `.ogg`, `.mp3` or `.flac` follows the source codec) and tagged with title, artist, album artist, album, track and year. Artist, album, title and year are prefilled from YouTube's music fields (`artist`, `track`, `album`, `release_year`) when the video has them, otherwise from an `Artist - Title` video title and the channel name (minus " - Topic"). Album falls back to the playlist, then `Singles`. Track is optional. Existing artist and album folders are reused ignoring case. |
 
 An existing show folder is reused, and its `tvshow.nfo` is left alone. Subtitles are linked too.
 
@@ -24,6 +25,7 @@ Create `youtarr-routarr.env` beside the Compose file with mode 640. Do not quote
 | Variable | Default | Purpose |
 |---|---|---|
 | `BASIC_AUTH_USER`, `BASIC_AUTH_PASSWORD` | None | Required unless `AUTH_DISABLED=1` |
+| `MUSIC_DIR` | `/media/music` | Where Audio filings go (set in Compose, not the env file) |
 | `DRY_RUN` | `1` | Set to `0` to allow writes |
 | `DISCORD_WEBHOOK_URL` | Empty | Empty turns the queue ping off |
 | `QUEUE_PING_DAYS` | `7` | Item age that triggers a ping, sent at most once every 24 hours |
