@@ -21,7 +21,7 @@ services:
       SHOWS_DIR: /media/youtube-shows   # keep apart from libraries Sonarr/Radarr manage
       MOVIES_DIR: /media/youtube-movies
       VIDEOS_DIR: /media/videos
-      MUSIC_DIR: /media/music
+      MUSIC_DIR: /media/youtube-music
       VIDEOS_SUBDIR: YouTube
       INFO_DIR: /youtarr-info
       DB_PATH: /data/youtarr-routarr.sqlite3
