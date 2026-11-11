@@ -26,6 +26,7 @@ class Config:
     auth_disabled: bool = False
     discord_webhook_url: str = ""
     queue_ping_days: int = 7
+    discord_added_webhook_url: str = ""
     videos_subdir: str = "YouTube"
     music_dir: Path = Path("/media/youtube-music")
 
@@ -46,6 +47,7 @@ class Config:
             auth_disabled=_flag(env.get("AUTH_DISABLED"), False),
             discord_webhook_url=env.get("DISCORD_WEBHOOK_URL", ""),
             queue_ping_days=int(env.get("QUEUE_PING_DAYS", "7")),
+            discord_added_webhook_url=env.get("DISCORD_ADDED_WEBHOOK_URL", ""),
             videos_subdir=env.get("VIDEOS_SUBDIR", "YouTube"),
             music_dir=Path(env.get("MUSIC_DIR", "/media/youtube-music")),
         )

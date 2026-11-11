@@ -14,7 +14,7 @@ from .filing import (Classification, FilingError, apply_plan, build_plan, existi
                      next_episode, show_exists, suggest_movie_title, suggest_music, undo_filing, video_folders,
                      videos_base)
 from .media import QueueItem, scan_queue, sort_key
-from .notify import aged_ids, record_seen, start_worker
+from .notify import aged_ids, notify_added, record_seen, start_worker
 
 TYPES = ("show", "movie", "video", "music")
 _write_lock = threading.Lock()
@@ -169,6 +169,9 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
                 plan = build_plan(cfg, db(), pairs)
                 if apply and plan.ok and not cfg.dry_run:
                     apply_plan(cfg, db(), plan)
+                    if cfg.discord_added_webhook_url:
+                        # Off the request thread: Discord being slow must not hold up the page.
+                        threading.Thread(target=notify_added, args=(cfg, plan), daemon=True).start()
                     html = render_template("_filed_notice.html", plan=plan)
                     response = make_response(html)
                     if done_target:

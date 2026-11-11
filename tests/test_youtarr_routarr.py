@@ -20,7 +20,7 @@ from youtarr_routarr.config import Config  # noqa: E402
 from youtarr_routarr.db import connect  # noqa: E402
 from youtarr_routarr.filing import Classification, FilingError, apply_plan, build_plan, safe_name, undo_filing  # noqa: E402
 from youtarr_routarr.media import scan_queue  # noqa: E402
-from youtarr_routarr.notify import check_queue  # noqa: E402
+from youtarr_routarr.notify import added_embeds, check_queue, notify_added  # noqa: E402
 
 NFO = """<?xml version="1.0"?><movie><title>{title}</title><plot>A &amp; B plot</plot>
 <premiered>{date}</premiered><studio>{channel}</studio></movie>"""
@@ -880,3 +880,89 @@ def test_music_form_prefills_and_files_over_http(cfg):
         "type": "music", "artist": "Band", "album": "The Album", "title": "Big Hit", "year": "2018", "track": ""})
     assert posted.status_code == 200 and "Filed 1 video" in posted.get_data(as_text=True)
     assert (cfg.music_dir / "Band" / "The Album" / "Big Hit.m4a").is_file()
+
+
+# --- Discord "added" alerts ---------------------------------------------------------------------
+
+def alert_cfg(cfg, **changes):
+    return replace(cfg, discord_added_webhook_url="https://example.invalid/added", **changes)
+
+
+def test_added_alert_for_a_movie_looks_like_a_seerr_embed(cfg, conn):
+    add_video(cfg, "Chan", "Blazing Saddles", "mmmmmmmmmm1", date="1974-02-07")
+    item = by_id(cfg)["mmmmmmmmmm1"]
+    plan = file_one(cfg, conn, item, Classification(type="movie", title="Blazing Saddles", year=1974))
+    sent = []
+    assert notify_added(alert_cfg(cfg), plan, lambda url, embeds, images: sent.append((url, embeds, images)))
+    (url, embeds, images), = sent
+    assert url == "https://example.invalid/added"
+    embed, = embeds
+    assert embed["title"] == "Movie Added: Blazing Saddles (1974)"
+    assert embed["description"] == "A & B plot"
+    assert {f["name"]: f["value"] for f in embed["fields"]} == {"Channel": "Chan", "Library": "YouTube Movies"}
+    assert embed["url"] == "https://www.youtube.com/watch?v=mmmmmmmmmm1" and embed["timestamp"]
+    assert images == [("image0.jpg", b"jpg")] and embed["image"] == {"url": "attachment://image0.jpg"}
+
+
+def test_added_alert_titles_for_each_type(cfg, conn):
+    for vid in ("aaaaaaaaaa1", "aaaaaaaaaa2"):
+        add_video(cfg, "Chan", vid, vid, thumb=False)
+    items = by_id(cfg)
+    plan = build_plan(cfg, conn, [
+        (items["aaaaaaaaaa1"], Classification(type="show", title="Pilot", show="My Show", season=1, episode=2,
+                                              show_year=2022)),
+        (items["aaaaaaaaaa2"], Classification(type="video", title="Clip", name="A Clip"))])
+    titles = [embed["title"] for embed, _thumb in added_embeds(plan)]
+    assert titles == ["Episode Added: My Show S01E02 - Pilot", "Video Added: A Clip"]
+
+
+def test_bulk_episodes_collapse_into_one_alert_per_show(cfg, conn):
+    for n in range(12):
+        add_video(cfg, "Chan", f"Ep {n}", f"bbbbbbbbb{n:02d}", date=f"2022-05-{n + 1:02d}")
+    items = sorted(by_id(cfg).values(), key=lambda i: i.upload_date)
+    plan = build_plan(cfg, conn, [(i, Classification(type="show", title=i.title, show="Bulk", season=1))
+                                  for i in items])
+    assert plan.ok
+    (embed, _thumb), = added_embeds(plan)
+    assert embed["title"] == "Episodes Added: Bulk (12)"
+    lines = embed["description"].splitlines()
+    assert lines[0] == "S01E01 · Ep 0" and lines[-1] == "…and 4 more"
+
+
+def test_added_alert_needs_its_own_webhook_and_never_raises(cfg, conn):
+    add_video(cfg, "Chan", "Film", "cccccccccc1")
+    plan = file_one(cfg, conn, by_id(cfg)["cccccccccc1"], Classification(type="movie", title="Film", year=2022))
+
+    def boom(*args):
+        raise OSError("discord is down")
+
+    assert notify_added(cfg, plan, boom) is False  # no added-alert webhook configured
+    queue_only = replace(cfg, discord_webhook_url="https://example.invalid/queue")
+    assert notify_added(queue_only, plan, boom) is False  # the queue webhook is not used for added alerts
+    assert notify_added(alert_cfg(cfg), plan, boom) is False  # swallowed, logged
+
+
+def test_added_alert_skips_missing_or_oversized_image(cfg, conn, monkeypatch):
+    add_video(cfg, "Chan", "Film", "dddddddddd1")
+    plan = file_one(cfg, conn, by_id(cfg)["dddddddddd1"], Classification(type="movie", title="Film", year=2022))
+    plan.entries[0].item.thumb.unlink()
+    sent = []
+    notify_added(alert_cfg(cfg), plan, lambda url, embeds, images: sent.append((embeds, images)))
+    embeds, images = sent[0]
+    assert images == [] and "image" not in embeds[0]
+
+
+@needs_ffmpeg
+def test_filing_over_http_sends_the_alert(cfg, monkeypatch):
+    import threading
+    from youtarr_routarr import notify
+    done = threading.Event()
+    sent = []
+    monkeypatch.setattr(notify, "_post_message",
+                        lambda url, embeds, images: (sent.append(embeds[0]["title"]), done.set()))
+    monkeypatch.setattr(notify.notify_added, "__defaults__", (notify._post_message, None))
+    item = music_item(cfg, title="Band - Big Hit", channel="VEVO", vid="eeeeeeeeeee")
+    web = create_app(alert_cfg(cfg), start_background=False).test_client()
+    web.post(f"/item/{item.video_id}/file", data={
+        "type": "music", "artist": "Band", "album": "Singles", "title": "Big Hit"})
+    assert done.wait(5) and sent == ["Audio Added: Band - Big Hit"]

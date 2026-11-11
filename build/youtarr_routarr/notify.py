@@ -1,4 +1,7 @@
-"""Discord ping when downloads wait too long. Ping only: this never files anything."""
+"""Discord messages: a ping when downloads wait too long, and an alert when media is added.
+
+Nothing here files anything, and a Discord failure never affects a filing.
+"""
 from __future__ import annotations
 
 import json
@@ -7,12 +10,17 @@ import sqlite3
 import threading
 import time
 import urllib.request
+import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Callable
+from pathlib import Path
+from typing import TYPE_CHECKING, Callable
 
 from .config import Config
 from .db import connect, log_event, now_iso
 from .media import scan_queue
+
+if TYPE_CHECKING:
+    from .filing import Entry, Plan
 
 log = logging.getLogger(__name__)
 RENOTIFY_AFTER = timedelta(hours=24)
@@ -82,3 +90,128 @@ def start_worker(cfg: Config) -> threading.Thread:
     thread = threading.Thread(target=loop, name="queue-ping", daemon=True)
     thread.start()
     return thread
+
+
+# --- "Added" alerts, laid out like Seerr's: title, description, fields, image, timestamp ---------
+
+LIBRARY_NAMES = {"show": "YouTube Shows", "movie": "YouTube Movies", "video": "Videos", "music": "YouTube Music"}
+COLORS = {"show": 0x3B82F6, "movie": 0xE5A00D, "video": 0x8B5CF6, "music": 0x22C55E}
+DESCRIPTION_MAX = 350
+MAX_IMAGE_BYTES = 8 * 1024 * 1024  # Discord's upload limit
+EMBEDS_PER_MESSAGE = 10  # Discord's limit, and each embed can carry one image
+
+
+def _clip(text: str, limit: int) -> str:
+    text = " ".join((text or "").split())
+    return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
+
+
+def _episode_code(entry: "Entry") -> str:
+    return f"S{entry.season:02d}E{entry.episode:02d}"
+
+
+def _embed(kind: str, title: str, description: str, fields: list[tuple[str, str]], entry: "Entry",
+           now: datetime) -> dict:
+    item = entry.item
+    embed = {
+        "title": _clip(title, 250),
+        "description": _clip(description, DESCRIPTION_MAX) if description else "",
+        "color": COLORS[kind],
+        "fields": [{"name": name, "value": _clip(value, 200), "inline": True}
+                   for name, value in fields if value],
+        "timestamp": now.isoformat(timespec="seconds"),
+    }
+    if item.has_real_id:
+        embed["url"] = f"https://www.youtube.com/watch?v={item.video_id}"
+    return embed
+
+
+def added_embeds(plan: "Plan", now: datetime | None = None) -> list[tuple[dict, Path | None]]:
+    """One embed per filed video, or one per show when a batch files several episodes of it."""
+    now = now or datetime.now(timezone.utc)
+    out: list[tuple[dict, Path | None]] = []
+    episodes: dict[str, list["Entry"]] = {}
+    for entry in plan.entries:
+        if entry.cls.type == "show":
+            episodes.setdefault(entry.show.name.casefold(), []).append(entry)
+    done: set[str] = set()
+    for entry in plan.entries:
+        item, cls = entry.item, entry.cls
+        if cls.type == "show":
+            key = entry.show.name.casefold()
+            group = episodes[key]
+            if len(group) > 1:
+                if key in done:
+                    continue
+                done.add(key)
+                lines = [f"{_episode_code(e)} · {e.cls.title}" for e in group]
+                shown = lines[:8] + ([f"…and {len(lines) - 8} more"] if len(lines) > 8 else [])
+                embed = {**_embed("show", f"Episodes Added: {entry.show.name} ({len(group)})", "",
+                                  [("Channel", item.channel), ("Library", LIBRARY_NAMES["show"])], entry, now),
+                         "description": "\n".join(shown)}
+                out.append((embed, item.thumb))
+                continue
+            embed = _embed("show", f"Episode Added: {entry.show.name} {_episode_code(entry)} - {cls.title}",
+                           item.plot, [("Channel", item.channel), ("Library", LIBRARY_NAMES["show"])], entry, now)
+        elif cls.type == "movie":
+            embed = _embed("movie", f"Movie Added: {cls.title} ({cls.year})", item.plot,
+                           [("Channel", item.channel), ("Library", LIBRARY_NAMES["movie"])], entry, now)
+        elif cls.type == "music":
+            embed = _embed("music", f"Audio Added: {cls.artist} - {cls.title}", "",
+                           [("Album", cls.album or ""), ("Track", str(cls.track or "")),
+                            ("Channel", item.channel), ("Library", LIBRARY_NAMES["music"])], entry, now)
+        else:
+            embed = _embed("video", f"Video Added: {cls.name or cls.title}", item.plot,
+                           [("Channel", item.channel), ("Library", LIBRARY_NAMES["video"])], entry, now)
+        out.append((embed, item.thumb))
+    return out
+
+
+def _post_message(url: str, embeds: list[dict], images: list[tuple[str, bytes]]) -> None:
+    """POST embeds, uploading images as attachments that the embeds reference by name."""
+    payload = json.dumps({"embeds": embeds}).encode("utf-8")
+    boundary = uuid.uuid4().hex
+    body = bytearray()
+
+    def part(headers: str, data: bytes) -> None:
+        body.extend(f"--{boundary}\r\n{headers}\r\n\r\n".encode() + data + b"\r\n")
+
+    part('Content-Disposition: form-data; name="payload_json"\r\nContent-Type: application/json', payload)
+    for index, (name, data) in enumerate(images):
+        part(f'Content-Disposition: form-data; name="files[{index}]"; filename="{name}"\r\n'
+             "Content-Type: application/octet-stream", data)
+    body.extend(f"--{boundary}--\r\n".encode())
+    request = urllib.request.Request(
+        url, data=bytes(body),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}", "User-Agent": "youtarr-routarr"})
+    with urllib.request.urlopen(request, timeout=15):
+        pass
+
+
+def notify_added(cfg: Config, plan: "Plan", post: Callable[[str, list[dict], list[tuple[str, bytes]]], None] = _post_message,
+                 now: datetime | None = None) -> bool:
+    """Send an alert for what a plan just filed. Never raises. Returns True when everything was sent."""
+    if not cfg.discord_added_webhook_url:
+        return False
+    try:
+        built = added_embeds(plan, now)
+        for start in range(0, len(built), EMBEDS_PER_MESSAGE):
+            embeds, images = [], []
+            for embed, thumb in built[start:start + EMBEDS_PER_MESSAGE]:
+                data = None
+                if thumb:
+                    try:
+                        if thumb.stat().st_size <= MAX_IMAGE_BYTES:
+                            data = thumb.read_bytes()
+                    except OSError:
+                        pass
+                if data:
+                    name = f"image{len(images)}{thumb.suffix.lower()}"
+                    images.append((name, data))
+                    embed["image"] = {"url": f"attachment://{name}"}
+                embeds.append(embed)
+            post(cfg.discord_added_webhook_url, embeds, images)
+        return True
+    except Exception:
+        log.exception("Discord added-alert failed")
+        return False

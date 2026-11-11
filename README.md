@@ -27,8 +27,18 @@ Create `youtarr-routarr.env` beside the Compose file with mode 640. Do not quote
 | `BASIC_AUTH_USER`, `BASIC_AUTH_PASSWORD` | None | Required unless `AUTH_DISABLED=1` |
 | `MUSIC_DIR` | `/media/youtube-music` | Where Audio filings go (set in Compose, not the env file) |
 | `DRY_RUN` | `1` | Set to `0` to allow writes |
-| `DISCORD_WEBHOOK_URL` | Empty | Empty turns the queue ping off |
+| `DISCORD_WEBHOOK_URL` | Empty | Queue-age ping only. Empty turns it off |
+| `DISCORD_ADDED_WEBHOOK_URL` | Empty | Alert sent when media is filed. Empty turns it off. Use a different webhook from the queue ping, as it never falls back to that one |
 | `QUEUE_PING_DAYS` | `7` | Item age that triggers a ping, sent at most once every 24 hours |
+
+## Discord alerts
+
+When `DISCORD_ADDED_WEBHOOK_URL` is set, each successful filing posts an embed laid out like Seerr's:
+a linked title (`Movie Added: Title (Year)`, `Episode Added: Show S01E02 - Title`, `Video Added: Name`
+or `Audio Added: Artist - Title`), the YouTube description, Channel and Library fields, the
+thumbnail as the image, and a timestamp. A batch that files several episodes of one show sends a
+single `Episodes Added: Show (N)` embed listing them. Alerts go out after the files are written, off
+the request thread, so a Discord outage never fails or delays a filing; failures are only logged.
 
 ## Tests
 
