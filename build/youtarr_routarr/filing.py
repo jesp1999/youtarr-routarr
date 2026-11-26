@@ -778,6 +778,12 @@ def undo_filing(cfg: Config, conn: sqlite3.Connection, video_id: str) -> list[st
     if row is None:
         raise FilingError("That video is not filed.")
     manifest = json.loads(row["manifest"])
+    # Extracted audio is a separate file, so a link count cannot tell whether the source survives.
+    if (row["type"] == "music" and not os.path.exists(row["source_path"])
+            and os.path.lexists(row["dest_path"])):
+        raise FilingError(
+            "The source download is gone, so this may be the last copy of the audio. Undo would delete it, "
+            "so nothing was changed.")
     for record in manifest["files"]:
         if record["role"] != "video":
             continue

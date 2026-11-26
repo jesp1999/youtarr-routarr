@@ -989,3 +989,16 @@ def test_audio_only_item_with_audio_off_is_listed_with_a_note(cfg):
     assert "Chan - Song" in page or "Song" in page
     assert "Turn on the Audio library (MUSIC_FOLDER) to file this." in page
     assert 'type="radio"' not in page and "/item/AAAAAAAAAAA/file" not in page
+
+
+@needs_ffmpeg
+def test_music_undo_refuses_when_the_source_is_gone(cfg, conn):
+    item = music_item(cfg)
+    plan = file_one(cfg, conn, item, Classification(type="music", title="Song", artist="Band", album="Album"))
+    dest = plan.entries[0].dest
+    item.path.unlink()
+    with pytest.raises(FilingError, match="last copy"):
+        undo_filing(cfg, conn, item.video_id)
+    assert dest.exists() and conn.execute("SELECT COUNT(*) FROM filings").fetchone()[0] == 1
+    dest.unlink()  # nothing left to protect, so the record can be cleared
+    assert undo_filing(cfg, conn, item.video_id) == []
