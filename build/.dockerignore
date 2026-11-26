@@ -1,5 +1,7 @@
 *
 !requirements.txt
 !wsgi.py
+!LICENSE
+!THIRD_PARTY_NOTICES.md
 !youtarr_routarr
 **/__pycache__

@@ -16,6 +16,9 @@ from .filing import (Classification, FilingError, apply_plan, build_plan, existi
 from .media import QueueItem, scan_queue, sort_key
 from .notify import aged_ids, notify_added, record_seen, start_worker
 
+# Linked in the page footer: the AGPL asks that people using a hosted copy can get its source.
+# Change it if you run a modified version.
+SOURCE_URL = "https://github.com/jesp1999/youtarr-routarr"
 # Radio button labels on the queue page.
 TYPE_LABELS = {"show": "Show episode", "movie": "Movie", "video": "Video", "music": "Audio"}
 # Names reported by /healthz.
@@ -79,6 +82,7 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
 
     app = Flask(__name__)
     app.config["YOUTARR_ROUTARR"] = cfg
+    app.jinja_env.globals["source_url"] = SOURCE_URL
     if start_background and cfg.discord_webhook_url:
         start_worker(cfg)
 

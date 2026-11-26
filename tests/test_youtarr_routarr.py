@@ -1002,3 +1002,18 @@ def test_music_undo_refuses_when_the_source_is_gone(cfg, conn):
     assert dest.exists() and conn.execute("SELECT COUNT(*) FROM filings").fetchone()[0] == 1
     dest.unlink()  # nothing left to protect, so the record can be cleared
     assert undo_filing(cfg, conn, item.video_id) == []
+
+
+# --- License ----------------------------------------------------------------------------------
+
+
+def test_footer_links_to_the_source(cfg):
+    page = client(cfg).get("/").data.decode()
+    assert 'href="https://github.com/jesp1999/youtarr-routarr"' in page and ">Source<" in page
+
+
+def test_image_ships_the_license():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "LICENSE").read_text()
+    assert "GNU AFFERO GENERAL PUBLIC LICENSE" in text and "Version 3, 19 November 2007" in text
+    assert (root / "build" / "LICENSE").read_text() == text

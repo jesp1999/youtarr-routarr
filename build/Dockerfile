@@ -1,5 +1,8 @@
 FROM python:3.13.7-slim-bookworm
 
+LABEL org.opencontainers.image.source="https://github.com/jesp1999/youtarr-routarr" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later"
+
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 
@@ -11,7 +14,7 @@ RUN apt-get update \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY wsgi.py .
+COPY LICENSE THIRD_PARTY_NOTICES.md wsgi.py ./
 COPY youtarr_routarr ./youtarr_routarr
 # COPY keeps host modes, and a host umask of 007 leaves files unreadable to the app user.
 RUN chmod -R a+rX /app
