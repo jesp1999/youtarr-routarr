@@ -873,3 +873,41 @@ def test_filing_over_http_sends_the_alert(cfg, monkeypatch):
     web.post(f"/item/{item.video_id}/file", data={
         "type": "music", "artist": "Band", "album": "Singles", "title": "Big Hit"})
     assert done.wait(5) and sent == ["Audio Added: Band - Big Hit"]
+
+
+# --- Optional libraries -----------------------------------------------------------------------
+
+
+def test_config_blank_or_unset_library_is_off():
+    config = Config.from_env({"SHOWS_DIR": "  ", "MOVIES_DIR": "/m", "VIDEOS_DIR": ""})
+    assert config.shows_dir is None and config.videos_dir is None and config.music_dir is None
+    assert config.movies_dir == Path("/m") and config.queue_dir == Path("/media/youtarr-queue")
+    assert config.enabled_types() == ("movie",) and config.default_type() == "movie"
+
+
+def test_app_needs_at_least_one_library(cfg):
+    off = replace(cfg, shows_dir=None, movies_dir=None, videos_dir=None, music_dir=None)
+    with pytest.raises(RuntimeError, match="at least one"):
+        create_app(off, start_background=False)
+
+
+def test_disabled_library_is_hidden_rejected_and_not_health_checked(cfg):
+    add_video(cfg, "C", "A", "AAAAAAAAAAA")
+    web = client(cfg, shows_dir=None, videos_dir=None)
+    page = web.get("/").data.decode()
+    assert 'value="movie" checked' in page
+    assert 'value="show"' not in page and 'value="video"' not in page and "File as a show" not in page
+    assert web.get("/healthz").status_code == 200
+    response = web.post("/item/AAAAAAAAAAA/file", data={"type": "video", "title": "A", "name": "A"})
+    assert b"The Videos library is turned off." in response.data
+    from youtarr_routarr import group_key
+    assert web.get(f"/group/{group_key('C')}").status_code == 404
+    assert web.get("/item/AAAAAAAAAAA/episode").status_code == 404
+    assert tree(cfg.videos_dir) == set()
+
+
+def test_undo_works_after_the_library_is_turned_off(cfg, conn):
+    add_video(cfg, "C", "A", "AAAAAAAAAAA")
+    file_one(cfg, conn, by_id(cfg)["AAAAAAAAAAA"], Classification("show", "A", show="S"))
+    assert undo_filing(replace(cfg, shows_dir=None), conn, "AAAAAAAAAAA") == []
+    assert tree(cfg.shows_dir) == set()

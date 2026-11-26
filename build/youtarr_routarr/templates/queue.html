@@ -7,7 +7,7 @@
 <section>
   <div class="group-head">
     <h2>{{ channel }} <small>{{ items|length }}</small></h2>
-    <a class="button" href="{{ url_for('group', key=group_key(channel)) }}">File as a show</a>
+    {% if shows_on %}<a class="button" href="{{ url_for('group', key=group_key(channel)) }}">File as a show</a>{% endif %}
   </div>
   {% for item in items %}
   <article class="card" id="card-{{ item.video_id }}">
@@ -19,14 +19,14 @@
       {% if item.plot %}<details><summary>Description</summary><p class="plot">{{ item.plot }}</p></details>{% endif %}
       <form>
         <fieldset class="types" aria-label="Type">
-          {% for value, label in [("show", "Show episode"), ("movie", "Movie"), ("video", "Video"), ("music", "Audio")] %}
-          <label><input type="radio" name="type" value="{{ value }}" {% if value == "video" %}checked{% endif %}
+          {% for value, label in types %}
+          <label><input type="radio" name="type" value="{{ value }}" {% if value == default_type %}checked{% endif %}
             hx-get="{{ url_for('fields', video_id=item.video_id) }}" hx-trigger="change"
             hx-target="#fields-{{ item.video_id }}"> {{ label }}</label>
           {% endfor %}
         </fieldset>
         <div id="fields-{{ item.video_id }}">
-          {% with ctx = field_context(item, "video") %}{% include "_fields_inner.html" %}{% endwith %}
+          {% with ctx = field_context(item, default_type) %}{% include "_fields_inner.html" %}{% endwith %}
         </div>
         <div class="actions">
           <button type="button" hx-post="{{ url_for('preview', video_id=item.video_id) }}" hx-include="closest form" hx-target="#result-{{ item.video_id }}">Preview</button>

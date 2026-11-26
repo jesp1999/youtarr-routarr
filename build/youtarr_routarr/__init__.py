@@ -16,7 +16,10 @@ from .filing import (Classification, FilingError, apply_plan, build_plan, existi
 from .media import QueueItem, scan_queue, sort_key
 from .notify import aged_ids, notify_added, record_seen, start_worker
 
-TYPES = ("show", "movie", "video", "music")
+# Radio button labels on the queue page.
+TYPE_LABELS = {"show": "Show episode", "movie": "Movie", "video": "Video", "music": "Audio"}
+# Names reported by /healthz.
+HEALTH_NAMES = {"show": "shows", "movie": "movies", "video": "videos", "music": "music"}
 _write_lock = threading.Lock()
 
 
@@ -69,6 +72,8 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
     cfg = cfg or Config.from_env()
     if not cfg.auth_disabled and not (cfg.auth_user and cfg.auth_password):
         raise RuntimeError("Set BASIC_AUTH_USER and BASIC_AUTH_PASSWORD, or AUTH_DISABLED=1.")
+    if not cfg.enabled_types():
+        raise RuntimeError("Set at least one of SHOWS_DIR, MOVIES_DIR, VIDEOS_DIR or MUSIC_DIR.")
     cfg.db_path.parent.mkdir(parents=True, exist_ok=True)
     connect(cfg.db_path).close()
 
@@ -123,7 +128,7 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
         abort(404)
 
     def field_context(item: QueueItem, kind: str) -> dict:
-        kind = kind if kind in TYPES else "show"
+        kind = kind if kind in cfg.enabled_types() else cfg.default_type()
         show = item.playlist or item.channel
         ctx = {"item": item, "kind": kind, "show": show}
         if kind == "show":
@@ -186,10 +191,9 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
 
     @app.get("/healthz")
     def healthz():
-        problems = [name for name, path in (("queue", cfg.queue_dir), ("shows", cfg.shows_dir),
-                                            ("movies", cfg.movies_dir), ("videos", cfg.videos_dir),
-                                            ("music", cfg.music_dir))
-                    if not path.is_dir()]
+        folders = [("queue", cfg.queue_dir)] + [(HEALTH_NAMES[kind], cfg.library_dir(kind))
+                                                for kind in cfg.enabled_types()]
+        problems = [name for name, path in folders if not path.is_dir()]
         db().execute("SELECT 1").fetchone()
         if problems:
             return {"status": "degraded", "missing": problems}, 503
@@ -215,6 +219,8 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
             groups.setdefault(item.channel, []).append(item)
         return render_template(
             "queue.html", groups=sorted(groups.items(), key=lambda kv: kv[0].casefold()),
+            types=[(kind, TYPE_LABELS[kind]) for kind in cfg.enabled_types()], default_type=cfg.default_type(),
+            shows_on=cfg.shows_dir is not None,
             total=len(items), aged=len(aged), group_key=group_key, field_context=field_context,
             dry_run=cfg.dry_run, ping_days=cfg.queue_ping_days)
 
@@ -226,6 +232,7 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
     @app.get("/item/<video_id>/episode")
     def episode_field(video_id: str):
         """Re-suggest the episode number, and ask for a year if the show is new."""
+        require_shows()
         item = pending_item(video_id)
         show = (request.args.get("show") or "").strip() or item.playlist or item.channel
         season = _season_arg(request.args.get("season"))
@@ -251,7 +258,12 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
         item = pending_item(video_id)
         return run_plan(lambda: [(item, from_form(item))], True, f"#card-{video_id}")
 
+    def require_shows() -> None:
+        if cfg.shows_dir is None:
+            abort(404)
+
     def group_items(key: str) -> tuple[str, list[QueueItem]]:
+        require_shows()
         items = sorted((i for i in pending() if group_key(i.channel) == key), key=sort_key)
         if not items:
             abort(404)

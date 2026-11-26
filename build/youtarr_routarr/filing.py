@@ -20,7 +20,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .config import Config
+from .config import LIBRARY_LABELS, Config
 from .db import log_event, now_iso
 from .media import VIDEO_EXTS, QueueItem
 
@@ -199,6 +199,8 @@ def next_episode(cfg: Config, conn: sqlite3.Connection, show: str, season: int =
 
 def existing_shows(cfg: Config, conn: sqlite3.Connection) -> list[str]:
     # Folder names (with the year), not bare show names: listing both made every show appear twice.
+    if cfg.shows_dir is None:
+        return []
     names = {row["folder"] for row in conn.execute("SELECT folder FROM shows")}
     try:
         names |= {child.name for child in cfg.shows_dir.iterdir() if child.is_dir()}
@@ -264,6 +266,8 @@ def resolve_video_folder(cfg: Config, raw: str | None) -> Path:
 
 
 def existing_artists(cfg: Config) -> list[str]:
+    if cfg.music_dir is None:
+        return []
     try:
         names = [child.name for child in cfg.music_dir.iterdir() if child.is_dir()]
     except OSError:
@@ -577,8 +581,6 @@ def _check_paths(plan: Plan) -> None:
 
 def build_plan(cfg: Config, conn: sqlite3.Connection, pairs: list[tuple[QueueItem, Classification]]) -> Plan:
     plan = Plan()
-    roots = {"show": cfg.shows_dir, "movie": cfg.movies_dir, "video": cfg.videos_dir,
-             "music": cfg.music_dir}
     # Specials (Season 0) never set the show's premiere year, poster or plot: plan them after the
     # regular episodes, and take the earliest date from regular episodes when there are any.
     pairs = sorted(pairs, key=lambda pair: pair[1].type == "show" and pair[1].season == 0)
@@ -597,9 +599,12 @@ def build_plan(cfg: Config, conn: sqlite3.Connection, pairs: list[tuple[QueueIte
                 earliest[key] = item.upload_date
 
     for item, cls in pairs:
-        root = roots.get(cls.type)
-        if root is None:
+        if cls.type not in LIBRARY_LABELS:
             plan.errors.append(f"Unknown type: {cls.type!r}")
+            continue
+        root = cfg.library_dir(cls.type)
+        if root is None:
+            plan.errors.append(f"The {LIBRARY_LABELS[cls.type]} library is turned off.")
             continue
         if not root.is_dir():
             plan.errors.append(f"Library folder does not exist: {root}")
@@ -796,7 +801,8 @@ def undo_filing(cfg: Config, conn: sqlite3.Connection, video_id: str) -> list[st
                 if show["created_by_app"]:
                     show_manifest = json.loads(show["manifest"])
                     _remove_files(show_manifest, kept)
-                    folder = cfg.shows_dir / show["folder"]
+                    # Show/Season NN/file: taken from the filing, so a library since turned off still works.
+                    folder = Path(row["dest_path"]).parent.parent
                     if folder.is_dir():
                         for child in folder.iterdir():
                             if child.is_dir() and child.name.startswith("Season "):
