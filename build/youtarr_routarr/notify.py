@@ -94,7 +94,6 @@ def start_worker(cfg: Config) -> threading.Thread:
 
 # --- "Added" alerts, laid out like Seerr's: title, description, fields, image, timestamp ---------
 
-LIBRARY_NAMES = {"show": "YouTube Shows", "movie": "YouTube Movies", "video": "Videos", "music": "YouTube Music"}
 COLORS = {"show": 0x3B82F6, "movie": 0xE5A00D, "video": 0x8B5CF6, "music": 0x22C55E}
 DESCRIPTION_MAX = 350
 MAX_IMAGE_BYTES = 8 * 1024 * 1024  # Discord's upload limit
@@ -104,6 +103,11 @@ EMBEDS_PER_MESSAGE = 10  # Discord's limit, and each embed can carry one image
 def _clip(text: str, limit: int) -> str:
     text = " ".join((text or "").split())
     return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
+
+
+def _library_name(entry: "Entry") -> str:
+    """The library's folder name, with underscores read as spaces."""
+    return entry.root.name.replace("_", " ")
 
 
 def _episode_code(entry: "Entry") -> str:
@@ -147,22 +151,22 @@ def added_embeds(plan: "Plan", now: datetime | None = None) -> list[tuple[dict, 
                 lines = [f"{_episode_code(e)} · {e.cls.title}" for e in group]
                 shown = lines[:8] + ([f"…and {len(lines) - 8} more"] if len(lines) > 8 else [])
                 embed = {**_embed("show", f"Episodes Added: {entry.show.name} ({len(group)})", "",
-                                  [("Channel", item.channel), ("Library", LIBRARY_NAMES["show"])], entry, now),
+                                  [("Channel", item.channel), ("Library", _library_name(entry))], entry, now),
                          "description": "\n".join(shown)}
                 out.append((embed, item.thumb))
                 continue
             embed = _embed("show", f"Episode Added: {entry.show.name} {_episode_code(entry)} - {cls.title}",
-                           item.plot, [("Channel", item.channel), ("Library", LIBRARY_NAMES["show"])], entry, now)
+                           item.plot, [("Channel", item.channel), ("Library", _library_name(entry))], entry, now)
         elif cls.type == "movie":
             embed = _embed("movie", f"Movie Added: {cls.title} ({cls.year})", item.plot,
-                           [("Channel", item.channel), ("Library", LIBRARY_NAMES["movie"])], entry, now)
+                           [("Channel", item.channel), ("Library", _library_name(entry))], entry, now)
         elif cls.type == "music":
             embed = _embed("music", f"Audio Added: {cls.artist} - {cls.title}", "",
                            [("Album", cls.album or ""), ("Track", str(cls.track or "")),
-                            ("Channel", item.channel), ("Library", LIBRARY_NAMES["music"])], entry, now)
+                            ("Channel", item.channel), ("Library", _library_name(entry))], entry, now)
         else:
             embed = _embed("video", f"Video Added: {cls.name or cls.title}", item.plot,
-                           [("Channel", item.channel), ("Library", LIBRARY_NAMES["video"])], entry, now)
+                           [("Channel", item.channel), ("Library", _library_name(entry))], entry, now)
         out.append((embed, item.thumb))
     return out
 

@@ -806,7 +806,7 @@ def test_added_alert_for_a_movie_looks_like_a_seerr_embed(cfg, conn):
     embed, = embeds
     assert embed["title"] == "Movie Added: Blazing Saddles (1974)"
     assert embed["description"] == "A & B plot"
-    assert {f["name"]: f["value"] for f in embed["fields"]} == {"Channel": "Chan", "Library": "YouTube Movies"}
+    assert {f["name"]: f["value"] for f in embed["fields"]} == {"Channel": "Chan", "Library": "Movies"}
     assert embed["url"] == "https://www.youtube.com/watch?v=mmmmmmmmmm1" and embed["timestamp"]
     assert images == [("image0.jpg", b"jpg")] and embed["image"] == {"url": "attachment://image0.jpg"}
 
@@ -1060,3 +1060,12 @@ def test_scan_hides_an_audio_only_webm_while_it_becomes_an_mp3(cfg):
 def test_scan_still_lists_a_real_webm_video_that_has_an_mp3(cfg):
     webm = _webm_and_mp3(cfg, with_video=True)
     assert [i.path for i in scan_queue(cfg.queue_dir, cfg.info_dir)] == [webm]
+
+
+def test_added_alert_names_the_library_after_its_folder(cfg, conn):
+    folder = cfg.movies_dir.parent / "My_Film_Shelf"
+    folder.mkdir()
+    add_video(cfg, "Chan", "A", "AAAAAAAAAAA")
+    plan = file_one(replace(cfg, movies_dir=folder), conn, by_id(cfg)["AAAAAAAAAAA"], Classification("movie", "A"))
+    (embed, _thumb), = added_embeds(plan)
+    assert {f["name"]: f["value"] for f in embed["fields"]}["Library"] == "My Film Shelf"

@@ -153,7 +153,7 @@ MP3", the download is listed once, as the video.
 ## Discord alerts
 
 With `DISCORD_ADDED_WEBHOOK_URL` set, each filing posts an embed with a linked title, the
-description, channel, library and thumbnail. Several episodes of one show filed together send one
+description, channel, library (its folder name) and thumbnail. Several episodes of one show filed together send one
 combined message. A Discord outage never fails or delays a filing. Use a different webhook for the
 waiting ping.
 
