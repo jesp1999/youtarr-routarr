@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -153,6 +154,22 @@ def _has_source(audio: Path, names: list[str]) -> bool:
     return any(Path(name).stem == audio.stem and Path(name).suffix.lower() in MP3_SOURCE_EXTS for name in names)
 
 
+def _is_audio_source(media: Path, names: list[str]) -> bool:
+    """True for a .webm holding only audio that is being converted to the .mp3 beside it.
+
+    Anything ffprobe cannot answer counts as a video, so a real download is never hidden.
+    """
+    if media.suffix.lower() != ".webm" or media.stem + ".mp3" not in names:
+        return False
+    try:
+        done = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v", "-show_entries", "stream=codec_type",
+             "-of", "csv=p=0", str(media)], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return done.returncode == 0 and not done.stdout.strip()
+
+
 def scan_queue(queue_dir: Path, info_dir: Path | None = None) -> list[QueueItem]:
     """Every finished video, plus each audio-only download that has no video."""
     videos: list[QueueItem] = []
@@ -169,6 +186,8 @@ def scan_queue(queue_dir: Path, info_dir: Path | None = None) -> list[QueueItem]
                     or INCOMPLETE.search(name) or media.is_symlink()):
                 continue
             if ext in AUDIO_EXTS and _has_source(media, filenames):
+                continue
+            if _is_audio_source(media, filenames):
                 continue
             found = audio if ext in AUDIO_EXTS else videos
             found.append(_build_item(queue_dir, media, filenames, info_dir))

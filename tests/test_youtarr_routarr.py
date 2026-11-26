@@ -1037,3 +1037,26 @@ def test_release_labels_the_image_with_the_same_license_as_the_dockerfile():
     assert f'{label}="AGPL-3.0-or-later"' in dockerfile
     # Without this, the metadata action labels the image from the repository's detected license.
     assert f"{label}=AGPL-3.0-or-later" in workflow
+
+
+def _webm_and_mp3(cfg, with_video: bool) -> Path:
+    folder = cfg.queue_dir / "C"
+    folder.mkdir()
+    webm = folder / "C - A [AAAAAAAAAAA].webm"
+    video = ["-f", "lavfi", "-i", "color=c=black:s=64x64:d=1", "-c:v", "libvpx"] if with_video else []
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *video, "-f", "lavfi", "-i", "sine=duration=1",
+                    "-c:a", "libopus", "-shortest", str(webm)], check=True)
+    webm.with_suffix(".mp3").write_bytes(b"partial")
+    return webm
+
+
+@needs_ffmpeg
+def test_scan_hides_an_audio_only_webm_while_it_becomes_an_mp3(cfg):
+    _webm_and_mp3(cfg, with_video=False)
+    assert scan_queue(cfg.queue_dir, cfg.info_dir) == []
+
+
+@needs_ffmpeg
+def test_scan_still_lists_a_real_webm_video_that_has_an_mp3(cfg):
+    webm = _webm_and_mp3(cfg, with_video=True)
+    assert [i.path for i in scan_queue(cfg.queue_dir, cfg.info_dir)] == [webm]
