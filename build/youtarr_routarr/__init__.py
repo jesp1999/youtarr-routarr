@@ -128,7 +128,10 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
         abort(404)
 
     def field_context(item: QueueItem, kind: str) -> dict:
-        kind = kind if kind in cfg.enabled_types() else cfg.default_type()
+        if item.audio_only:
+            kind = "music"
+        elif kind not in cfg.enabled_types():
+            kind = cfg.default_type()
         show = item.playlist or item.channel
         ctx = {"item": item, "kind": kind, "show": show}
         if kind == "show":
@@ -220,7 +223,7 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
         return render_template(
             "queue.html", groups=sorted(groups.items(), key=lambda kv: kv[0].casefold()),
             types=[(kind, TYPE_LABELS[kind]) for kind in cfg.enabled_types()], default_type=cfg.default_type(),
-            shows_on=cfg.shows_dir is not None,
+            shows_on=cfg.shows_dir is not None, music_on=cfg.music_dir is not None,
             total=len(items), aged=len(aged), group_key=group_key, field_context=field_context,
             dry_run=cfg.dry_run, ping_days=cfg.queue_ping_days)
 
@@ -264,7 +267,7 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
 
     def group_items(key: str) -> tuple[str, list[QueueItem]]:
         require_shows()
-        items = sorted((i for i in pending() if group_key(i.channel) == key), key=sort_key)
+        items = sorted((i for i in pending() if group_key(i.channel) == key and not i.audio_only), key=sort_key)
         if not items:
             abort(404)
         return items[0].channel, items

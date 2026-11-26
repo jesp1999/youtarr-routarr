@@ -10,6 +10,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 VIDEO_EXTS = {".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v"}
+AUDIO_EXTS = {".mp3"}  # what Youtarr writes for audio-only downloads
+# A same-named file with one of these means the .mp3 is a video's companion, or is still being converted.
+MP3_SOURCE_EXTS = VIDEO_EXTS | {".m4a", ".opus"}
 THUMB_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 SUB_EXTS = {".srt", ".vtt", ".ass"}
 ID_IN_BRACKETS = re.compile(r"\[([A-Za-z0-9_-]{11})\]")
@@ -46,6 +49,10 @@ class QueueItem:
     @property
     def ext(self) -> str:
         return self.path.suffix.lower()
+
+    @property
+    def audio_only(self) -> bool:
+        return self.ext in AUDIO_EXTS
 
 
 def _date(raw: object) -> str | None:
@@ -142,20 +149,32 @@ def _strings(value: object) -> list[str]:
     return [str(v).strip() for v in value if isinstance(v, str) and v.strip()]
 
 
+def _has_source(audio: Path, names: list[str]) -> bool:
+    return any(Path(name).stem == audio.stem and Path(name).suffix.lower() in MP3_SOURCE_EXTS for name in names)
+
+
 def scan_queue(queue_dir: Path, info_dir: Path | None = None) -> list[QueueItem]:
-    items: list[QueueItem] = []
+    """Every finished video, plus each audio-only download that has no video."""
+    videos: list[QueueItem] = []
+    audio: list[QueueItem] = []
     for dirpath, dirnames, filenames in os.walk(queue_dir, followlinks=False):
         dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
         directory = Path(dirpath)
         if any(name.endswith((".part", ".ytdl")) for name in filenames):
             continue  # a download is still being written here
         for name in sorted(filenames):
-            video = directory / name
-            if (video.suffix.lower() not in VIDEO_EXTS or name.startswith(".")
-                    or INCOMPLETE.search(name) or video.is_symlink()):
+            media = directory / name
+            ext = media.suffix.lower()
+            if (ext not in VIDEO_EXTS | AUDIO_EXTS or name.startswith(".")
+                    or INCOMPLETE.search(name) or media.is_symlink()):
                 continue
-            items.append(_build_item(queue_dir, video, filenames, info_dir))
-    return items
+            if ext in AUDIO_EXTS and _has_source(media, filenames):
+                continue
+            found = audio if ext in AUDIO_EXTS else videos
+            found.append(_build_item(queue_dir, media, filenames, info_dir))
+    # The same download may have its video in one folder and its audio in another.
+    video_ids = {item.video_id for item in videos}
+    return videos + [item for item in audio if item.video_id not in video_ids]
 
 
 def _build_item(queue_dir: Path, video: Path, names: list[str], info_dir: Path | None) -> QueueItem:

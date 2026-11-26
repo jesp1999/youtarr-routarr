@@ -911,3 +911,81 @@ def test_undo_works_after_the_library_is_turned_off(cfg, conn):
     file_one(cfg, conn, by_id(cfg)["AAAAAAAAAAA"], Classification("show", "A", show="S"))
     assert undo_filing(replace(cfg, shows_dir=None), conn, "AAAAAAAAAAA") == []
     assert tree(cfg.shows_dir) == set()
+
+
+# --- Audio-only downloads ---------------------------------------------------------------------
+
+
+def add_audio(cfg, channel: str, title: str, vid: str) -> Path:
+    folder = cfg.queue_dir / channel / f"{channel} - {title} - {vid}"
+    folder.mkdir(parents=True, exist_ok=True)
+    audio = folder / f"{channel} - {title} [{vid}].mp3"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+                    "-c:a", "libmp3lame", str(audio)], check=True)
+    return audio
+
+
+@needs_ffmpeg
+def test_scan_lists_an_audio_only_download(cfg):
+    add_audio(cfg, "Chan", "Song", "AAAAAAAAAAA")
+    item = by_id(cfg)["AAAAAAAAAAA"]
+    assert item.audio_only and item.ext == ".mp3"
+
+
+def test_scan_lists_a_video_and_mp3_pair_once(cfg):
+    video = add_video(cfg, "C", "A", "AAAAAAAAAAA")
+    video.with_suffix(".mp3").write_bytes(b"mp3")
+    items = scan_queue(cfg.queue_dir, cfg.info_dir)
+    assert [i.path for i in items] == [video] and not items[0].audio_only
+
+
+def test_scan_hides_an_mp3_whose_video_is_in_another_folder(cfg):
+    video = add_video(cfg, "C", "A", "AAAAAAAAAAA")
+    other = cfg.queue_dir / "Other"
+    other.mkdir()
+    (other / "Other - A [AAAAAAAAAAA].mp3").write_bytes(b"mp3")
+    assert [i.path for i in scan_queue(cfg.queue_dir, cfg.info_dir)] == [video]
+
+
+@pytest.mark.parametrize("source_ext", [".m4a", ".opus"])
+def test_scan_skips_an_mp3_still_being_converted(cfg, source_ext):
+    folder = cfg.queue_dir / "C"
+    folder.mkdir()
+    (folder / "C - A [AAAAAAAAAAA].mp3").write_bytes(b"partial")
+    (folder / f"C - A [AAAAAAAAAAA]{source_ext}").write_bytes(b"source")
+    assert scan_queue(cfg.queue_dir, cfg.info_dir) == []
+
+
+@needs_ffmpeg
+def test_audio_only_files_as_audio_and_nothing_else(cfg, conn):
+    source = add_audio(cfg, "Chan", "Song", "AAAAAAAAAAA")
+    before = source.read_bytes()
+    item = by_id(cfg)["AAAAAAAAAAA"]
+    for kind in ("show", "movie", "video"):
+        plan = build_plan(cfg, conn, [(item, Classification(kind, "Song", year=2020))])
+        assert any("audio only" in e for e in plan.errors)
+    plan = file_one(cfg, conn, item, Classification(type="music", title="Song", artist="Band", album="Album"))
+    dest = cfg.music_dir / "Band" / "Album" / "Song.mp3"
+    assert plan.entries[0].dest == dest and tags(dest)["artist"] == "Band"
+    assert source.read_bytes() == before
+
+
+@needs_ffmpeg
+def test_audio_only_item_offers_only_audio_and_skips_the_group(cfg):
+    add_audio(cfg, "Chan", "Song", "AAAAAAAAAAA")
+    web = client(cfg)
+    page = web.get("/").data.decode()
+    assert 'value="music" checked' in page and 'name="artist"' in page and "Audio only" in page
+    assert 'value="video"' not in page and "File as a show" not in page
+    from youtarr_routarr import group_key
+    assert web.get(f"/group/{group_key('Chan')}").status_code == 404
+    assert web.get("/stats").get_json()["queue"] == 1
+
+
+@needs_ffmpeg
+def test_audio_only_item_with_audio_off_is_listed_with_a_note(cfg):
+    add_audio(cfg, "Chan", "Song", "AAAAAAAAAAA")
+    page = client(cfg, music_dir=None).get("/").data.decode()
+    assert "Chan - Song" in page or "Song" in page
+    assert "Turn on the Audio library (MUSIC_FOLDER) to file this." in page
+    assert 'type="radio"' not in page and "/item/AAAAAAAAAAA/file" not in page

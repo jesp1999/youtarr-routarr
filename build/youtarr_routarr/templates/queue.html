@@ -7,7 +7,7 @@
 <section>
   <div class="group-head">
     <h2>{{ channel }} <small>{{ items|length }}</small></h2>
-    {% if shows_on %}<a class="button" href="{{ url_for('group', key=group_key(channel)) }}">File as a show</a>{% endif %}
+    {% if shows_on and items|rejectattr("audio_only")|list %}<a class="button" href="{{ url_for('group', key=group_key(channel)) }}">File as a show</a>{% endif %}
   </div>
   {% for item in items %}
   <article class="card" id="card-{{ item.video_id }}">
@@ -15,18 +15,23 @@
     {% else %}<div class="no-thumb">No thumbnail</div>{% endif %}
     <div class="body">
       <h3>{{ item.title }}</h3>
-      <p class="meta">{{ item.upload_date or "No upload date" }} · {{ "%.1f"|format(item.size / 1048576) }} MB{% if not item.has_real_id %} · No YouTube ID{% endif %}</p>
+      <p class="meta">{{ item.upload_date or "No upload date" }} · {{ "%.1f"|format(item.size / 1048576) }} MB{% if item.audio_only %} · Audio only{% endif %}{% if not item.has_real_id %} · No YouTube ID{% endif %}</p>
       {% if item.plot %}<details><summary>Description</summary><p class="plot">{{ item.plot }}</p></details>{% endif %}
+      {% set choices = [("music", "Audio")] if item.audio_only else types %}
+      {% set selected = "music" if item.audio_only else default_type %}
+      {% if item.audio_only and not music_on %}
+      <p class="hint">Turn on the Audio library (MUSIC_FOLDER) to file this.</p>
+      {% else %}
       <form>
         <fieldset class="types" aria-label="Type">
-          {% for value, label in types %}
-          <label><input type="radio" name="type" value="{{ value }}" {% if value == default_type %}checked{% endif %}
+          {% for value, label in choices %}
+          <label><input type="radio" name="type" value="{{ value }}" {% if value == selected %}checked{% endif %}
             hx-get="{{ url_for('fields', video_id=item.video_id) }}" hx-trigger="change"
             hx-target="#fields-{{ item.video_id }}"> {{ label }}</label>
           {% endfor %}
         </fieldset>
         <div id="fields-{{ item.video_id }}">
-          {% with ctx = field_context(item, default_type) %}{% include "_fields_inner.html" %}{% endwith %}
+          {% with ctx = field_context(item, selected) %}{% include "_fields_inner.html" %}{% endwith %}
         </div>
         <div class="actions">
           <button type="button" hx-post="{{ url_for('preview', video_id=item.video_id) }}" hx-include="closest form" hx-target="#result-{{ item.video_id }}">Preview</button>
@@ -34,6 +39,7 @@
         </div>
         <div id="result-{{ item.video_id }}" aria-live="polite"></div>
       </form>
+      {% endif %}
     </div>
   </article>
   {% endfor %}

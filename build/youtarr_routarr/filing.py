@@ -606,6 +606,9 @@ def build_plan(cfg: Config, conn: sqlite3.Connection, pairs: list[tuple[QueueIte
         if root is None:
             plan.errors.append(f"The {LIBRARY_LABELS[cls.type]} library is turned off.")
             continue
+        if item.audio_only and cls.type != "music":
+            plan.errors.append(f"'{item.title}' is audio only; file it as Audio.")
+            continue
         if not root.is_dir():
             plan.errors.append(f"Library folder does not exist: {root}")
             continue
