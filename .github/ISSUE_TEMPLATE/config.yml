@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Youtarr
+    url: https://github.com/DialmasterOrg/Youtarr/issues
+    about: Problems with downloading, channels or Youtarr itself.

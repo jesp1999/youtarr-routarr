@@ -1,0 +1,78 @@
+name: Bug report
+description: Something does not work the way it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Download problems belong to Youtarr. Report them in the Youtarr repository.
+        Remove passwords, webhook URLs and anything else private before posting.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the queue
+        2. Choose "Show episode" for ...
+        3. Press File
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: YoutarrRoutarr version
+      description: The image tag, or the commit if you build from source.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: youtarr-version
+    attributes:
+      label: Youtarr version
+  - type: dropdown
+    id: server
+    attributes:
+      label: Media server
+      options:
+        - Jellyfin
+        - Plex
+        - Emby
+        - Kodi
+        - Other or none
+    validations:
+      required: true
+  - type: input
+    id: server-version
+    attributes:
+      label: Media server version
+  - type: dropdown
+    id: filing-type
+    attributes:
+      label: What were you filing?
+      options:
+        - Show episode
+        - Movie
+        - Video
+        - Audio
+        - Not related to filing
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "Output of `docker compose logs youtarr-routarr`, with private details removed."
+      render: text
+  - type: textarea
+    id: setup
+    attributes:
+      label: Folder setup
+      description: >
+        The folder settings from your settings file and the filesystem they are on.
+        Leave out the login and webhook settings.
+      render: text

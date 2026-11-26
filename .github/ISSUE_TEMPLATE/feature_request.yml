@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest an improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation or problem, in your own words.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+    validations:
+      required: true
+  - type: dropdown
+    id: server
+    attributes:
+      label: Media server
+      options:
+        - Jellyfin
+        - Plex
+        - Emby
+        - Kodi
+        - Other or not relevant
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Anything you have tried instead
