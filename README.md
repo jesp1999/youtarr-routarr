@@ -1,7 +1,7 @@
 # YoutarrRoutarr
 
 A companion to [Youtarr](https://github.com/DialmasterOrg/Youtarr) that sorts its downloads into
-Jellyfin or Plex libraries. It is a separate project and is not part of Youtarr.
+Jellyfin, Plex, Emby or Kodi libraries. It is a separate project and is not part of Youtarr.
 
 Youtarr downloads into a queue folder. In YoutarrRoutarr you classify each download as a **Show
 episode**, a **Movie**, a named **Video** or **Audio**, preview the result, and file it. Filing
@@ -16,7 +16,7 @@ Audio is the exception: the audio stream is copied into a new file.
 ## Requirements
 
 - Docker with Compose.
-- Youtarr, plus Jellyfin or Plex.
+- Youtarr, plus Jellyfin, Plex, Emby or Kodi.
 - The queue and all libraries on **one filesystem**, under one parent folder. Hardlinks cannot
   cross filesystems or separate container mounts.
 
@@ -39,7 +39,7 @@ Audio is the exception: the audio stream is copied into a new file.
 4. [Point Youtarr at the queue](#pointing-youtarr-at-the-queue).
 5. Start it with `docker compose up -d` and open `http://<your-server>:8000`.
 6. Check a few previews. When they look right, set `DRY_RUN=0` and run `docker compose up -d` again.
-7. Set up your libraries in [Jellyfin](#jellyfin) or [Plex](#plex).
+7. Set up your libraries in [Jellyfin](#jellyfin), [Plex](#plex), [Emby](#emby) or [Kodi](#kodi).
 
 To update: `docker compose pull && docker compose up -d`.
 
@@ -125,7 +125,33 @@ The regular Plex Music agent can replace an artist with a similarly named one it
 In testing, YouTube tags did not appear as genres or labels. Playback and Plex's client apps were
 not tested. Adding to an existing show folder that has no `tvshow.nfo` was not tested either.
 
-Emby and Kodi read NFO files too, but have not been tested.
+## Emby
+
+Tested with Emby Server 4.10.2.0, using default library settings. Add one library for each folder
+you use:
+
+| Folder | Content type |
+|---|---|
+| Shows | TV Shows |
+| Movies | Movies |
+| Videos | Home Videos & Photos |
+| Music | Music |
+
+## Kodi
+
+Tested with Kodi 21.2. Add each folder you use as a source. For video sources, choose the content
+type and the **Local information only** provider:
+
+| Folder | Content | Settings |
+|---|---|---|
+| Shows | TV shows | |
+| Movies | Movies | Movies are in separate folders that match the movie title; scan recursively |
+| Videos | Movies | Movies are in separate folders that match the movie title; scan recursively |
+| Music | Add as a music source and scan it into the library | |
+
+- Without the separate-folders setting, Kodi shows no posters or fanart for movies and videos.
+- Kodi skips a show folder that has no `tvshow.nfo`. The app writes one for every show folder it
+  creates, but not for a folder that already existed, so add one yourself there.
 
 ## What gets written
 

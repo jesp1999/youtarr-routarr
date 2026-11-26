@@ -18,7 +18,8 @@ Make YoutarrRoutarr usable by other Youtarr users, publish it at
 ## Non-goals
 
 - Running without Docker as a supported setup.
-- Emby and Kodi support. The README lists them as untested.
+- Emby and Kodi support in the first design. Added later: both were tested with Emby 4.10.2.0 and
+  Kodi 21.2 against the unchanged filing layout, and the README documents their setup.
 - Writing NFO files for music, or fetching online metadata.
 - Configurable naming layouts.
 - Supporting upgrades from versions that predate this release, beyond what already works.
