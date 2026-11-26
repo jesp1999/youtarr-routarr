@@ -1,47 +1,57 @@
+# Settings come from the file you copy from the sample settings file. See README.md.
 name: youtarr-routarr
 services:
   youtarr-routarr:
-    image: youtarr-routarr:local
+    image: ghcr.io/jesp1999/youtarr-routarr:latest
     container_name: youtarr-routarr
     hostname: youtarr-routarr
-    user: "1000:1000"
+    user: "${PUID:-1000}:${PGID:-1000}"
     security_opt:
       - no-new-privileges:true
     read_only: true
-    build:
-      context: ./build
-      dockerfile: Dockerfile
     cap_drop:
       - ALL
-    env_file:
-      - youtarr-routarr.env
     environment:
-      TZ: Etc/UTC
-      QUEUE_DIR: /media/youtarr-queue
-      SHOWS_DIR: /media/youtube-shows   # keep apart from libraries Sonarr/Radarr manage
-      MOVIES_DIR: /media/youtube-movies
-      VIDEOS_DIR: /media/videos
-      MUSIC_DIR: /media/youtube-music
-      VIDEOS_SUBDIR: YouTube
+      TZ: ${TZ:-Etc/UTC}
+      QUEUE_DIR: /media/${QUEUE_FOLDER:-youtarr-queue}
+      # A blank folder name leaves the directory empty, which turns that library off.
+      SHOWS_DIR: "${SHOWS_FOLDER:+/media/${SHOWS_FOLDER}}"
+      MOVIES_DIR: "${MOVIES_FOLDER:+/media/${MOVIES_FOLDER}}"
+      VIDEOS_DIR: "${VIDEOS_FOLDER:+/media/${VIDEOS_FOLDER}}"
+      MUSIC_DIR: "${MUSIC_FOLDER:+/media/${MUSIC_FOLDER}}"
+      VIDEOS_SUBDIR: "${VIDEOS_SUBDIR-YouTube}"
       INFO_DIR: /youtarr-info
       DB_PATH: /data/youtarr-routarr.sqlite3
+      BASIC_AUTH_USER: "${BASIC_AUTH_USER-}"
+      BASIC_AUTH_PASSWORD: "${BASIC_AUTH_PASSWORD-}"
+      AUTH_DISABLED: "${AUTH_DISABLED:-0}"
+      DRY_RUN: "${DRY_RUN:-1}"
+      DISCORD_WEBHOOK_URL: "${DISCORD_WEBHOOK_URL-}"
+      DISCORD_ADDED_WEBHOOK_URL: "${DISCORD_ADDED_WEBHOOK_URL-}"
+      QUEUE_PING_DAYS: "${QUEUE_PING_DAYS:-7}"
     volumes:
-      # One mount on purpose: link() returns EXDEV across separate bind mounts,
+      # One media mount on purpose: link() returns EXDEV across separate bind mounts,
       # even on the same filesystem, so the queue and libraries cannot be split.
       - type: bind
-        source: /media
+        source: ${MEDIA_ROOT:?Set MEDIA_ROOT in your settings file}
         target: /media
+        bind:
+          create_host_path: false
       - type: bind
-        source: /path/to/youtarr/jobs/info
+        source: ${YOUTARR_INFO_DIR:?Set YOUTARR_INFO_DIR in your settings file}
         target: /youtarr-info
         read_only: true
+        bind:
+          create_host_path: false
       - type: bind
         source: ./data
         target: /data
+        bind:
+          create_host_path: false
     tmpfs:
       - /tmp
     ports:
-      - "8000:8000"
+      - "${PORT:-8000}:8000"
     restart: unless-stopped
     deploy:
       resources:
