@@ -1017,3 +1017,13 @@ def test_image_ships_the_license():
     text = (root / "LICENSE").read_text()
     assert "GNU AFFERO GENERAL PUBLIC LICENSE" in text and "Version 3, 19 November 2007" in text
     assert (root / "build" / "LICENSE").read_text() == text
+
+
+@pytest.mark.parametrize("place", ["same", "parent", "child", "symlink"])
+def test_app_refuses_a_library_that_overlaps_the_queue(cfg, tmp_path, place):
+    if place == "symlink":
+        (tmp_path / "alias").symlink_to(cfg.queue_dir, target_is_directory=True)
+    overlap = {"same": cfg.queue_dir, "parent": cfg.queue_dir.parent, "child": cfg.queue_dir / "shows",
+               "symlink": tmp_path / "alias"}[place]
+    with pytest.raises(RuntimeError, match="SHOWS_DIR overlaps the queue"):
+        create_app(replace(cfg, shows_dir=overlap), start_background=False)

@@ -71,12 +71,24 @@ def group_key(channel: str) -> str:
     return hashlib.sha1(channel.encode("utf-8")).hexdigest()[:12]
 
 
+def _check_libraries(cfg: Config) -> None:
+    """A library at, above or inside the queue would let filing write into Youtarr's folder."""
+    queue = cfg.queue_dir.resolve()
+    for kind in cfg.enabled_types():
+        library = cfg.library_dir(kind).resolve()
+        if library.is_relative_to(queue) or queue.is_relative_to(library):
+            name = f"{HEALTH_NAMES[kind].upper()}_DIR"
+            raise RuntimeError(f"{name} overlaps the queue folder ({cfg.queue_dir}). "
+                               "Give each library its own folder.")
+
+
 def create_app(cfg: Config | None = None, start_background: bool = True) -> Flask:
     cfg = cfg or Config.from_env()
     if not cfg.auth_disabled and not (cfg.auth_user and cfg.auth_password):
         raise RuntimeError("Set BASIC_AUTH_USER and BASIC_AUTH_PASSWORD, or AUTH_DISABLED=1.")
     if not cfg.enabled_types():
         raise RuntimeError("Set at least one of SHOWS_DIR, MOVIES_DIR, VIDEOS_DIR or MUSIC_DIR.")
+    _check_libraries(cfg)
     cfg.db_path.parent.mkdir(parents=True, exist_ok=True)
     connect(cfg.db_path).close()
 

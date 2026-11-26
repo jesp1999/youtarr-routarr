@@ -83,7 +83,8 @@ All settings live in `.env`. Put single quotes around any value containing `$`.
 | `DISCORD_ADDED_WEBHOOK_URL` | blank | Alert when media is filed |
 | `QUEUE_PING_DAYS` | `7` | Age in days that triggers the ping, sent at most once a day |
 
-At least one library folder is needed. Use libraries that Sonarr, Radarr or Lidarr do not manage.
+At least one library folder is needed. No library may be the queue folder, contain it or sit inside
+it, and the app will not start if one does. Use libraries that Sonarr, Radarr or Lidarr do not manage.
 
 For anything else, such as a reverse-proxy network, add your own `docker-compose.override.yml`.
 
