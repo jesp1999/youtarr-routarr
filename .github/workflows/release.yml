@@ -32,6 +32,8 @@ jobs:
         with:
           images: ghcr.io/jesp1999/youtarr-routarr
           tags: type=semver,pattern={{version}}
+          labels: |
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
       - uses: docker/build-push-action@v7
         with:
           context: ./build

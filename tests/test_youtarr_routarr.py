@@ -1027,3 +1027,13 @@ def test_app_refuses_a_library_that_overlaps_the_queue(cfg, tmp_path, place):
                "symlink": tmp_path / "alias"}[place]
     with pytest.raises(RuntimeError, match="SHOWS_DIR overlaps the queue"):
         create_app(replace(cfg, shows_dir=overlap), start_background=False)
+
+
+def test_release_labels_the_image_with_the_same_license_as_the_dockerfile():
+    root = Path(__file__).resolve().parents[1]
+    dockerfile = (root / "build" / "Dockerfile").read_text()
+    workflow = (root / ".github" / "workflows" / "release.yml").read_text()
+    label = "org.opencontainers.image.licenses"
+    assert f'{label}="AGPL-3.0-or-later"' in dockerfile
+    # Without this, the metadata action labels the image from the repository's detected license.
+    assert f"{label}=AGPL-3.0-or-later" in workflow
