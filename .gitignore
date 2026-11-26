@@ -4,3 +4,4 @@ data/
 *.env
 *.bak
 docker-compose.override.yml
+.venv/
