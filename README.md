@@ -49,6 +49,13 @@ To build from source instead, clone the repository and run:
 docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
+Naming files with `-f` stops Compose loading `docker-compose.override.yml` by itself. If you have
+one, name it last:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml -f docker-compose.override.yml up -d --build
+```
+
 ## Pointing Youtarr at the queue
 
 Set Youtarr's `YOUTUBE_OUTPUT_DIR` to `MEDIA_ROOT/QUEUE_FOLDER` and recreate its container. Keep

@@ -1,5 +1,7 @@
 # Build the image from this source instead of pulling the published one:
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+# If you have a docker-compose.override.yml, add it last with another -f: naming files stops
+# Compose loading it by itself.
 services:
   youtarr-routarr:
     image: youtarr-routarr:local
