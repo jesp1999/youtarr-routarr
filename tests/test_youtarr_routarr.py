@@ -370,30 +370,30 @@ def test_dry_run_writes_nothing(cfg):
     response = web.post("/item/AAAAAAAAAAA/file", data={"type": "video", "name": "A", "title": "A"})
     assert b"Dry run" in response.data and b"A.mp4" in response.data
     assert tree(cfg.videos_dir) == set()
-    assert b"1 unclassified" in web.get("/").data
+    assert b"1 waiting" in web.get("/").data
 
 
 def test_web_flow_file_undo_reclassify(cfg):
     video = add_video(cfg, "C", "A", "AAAAAAAAAAA", date="2020-01-01")
     web = client(cfg)
     page = web.get("/").data
-    assert b"1 unclassified" in page and b"card-AAAAAAAAAAA" in page
+    assert b"1 waiting" in page and b"row-AAAAAAAAAAA" in page
     assert web.get("/thumb/AAAAAAAAAAA").data == b"jpg"
     assert b"Episode" in web.get("/item/AAAAAAAAAAA/fields?type=show").data
     preview = web.post("/item/AAAAAAAAAAA/preview", data={"type": "movie", "title": "A", "year": "2020"})
     assert b"hardlink" in preview.data and tree(cfg.movies_dir) == set()
 
     done = web.post("/item/AAAAAAAAAAA/file", data={"type": "movie", "title": "A", "year": "2020"})
-    assert done.headers["HX-Retarget"] == "#card-AAAAAAAAAAA"
+    assert done.status_code == 303 and done.headers["Location"].endswith("filed=AAAAAAAAAAA")
     assert (cfg.movies_dir / "A (2020)" / "A (2020).mp4").exists()
-    assert b"0 unclassified" in web.get("/").data
+    assert b"0 waiting" in web.get("/").data
     assert web.get("/thumb/AAAAAAAAAAA").status_code == 404
     assert b"A (2020).mp4" in web.get("/filed").data
 
     back = web.post("/filed/AAAAAAAAAAA/undo", data={"then": "reclassify"})
-    assert back.status_code == 303 and "#card-AAAAAAAAAAA" in back.headers["Location"]
+    assert back.status_code == 303 and back.headers["Location"].endswith("/?item=AAAAAAAAAAA")
     assert tree(cfg.movies_dir) == set() and video.exists()
-    assert b"1 unclassified" in web.get("/").data
+    assert b"1 waiting" in web.get("/").data
 
 
 def test_group_bulk_action_orders_by_date(cfg):
@@ -403,21 +403,22 @@ def test_group_bulk_action_orders_by_date(cfg):
     web = client(cfg)
     from youtarr_routarr import group_key
     key = group_key("Chan")
-    page = web.get(f"/group/{key}").data.decode()
+    page = web.get(f"/group/{key}", follow_redirects=True).data.decode()
+    page = page[page.index('id="group-rows"'):]
     assert page.index("First") < page.index("Second")
     data = {"show": "Chan", "season": "1", "include-AAAAAAAAAAA": "on", "include-BBBBBBBBBBB": "on",
             "episode-AAAAAAAAAAA": "1", "episode-BBBBBBBBBBB": "2",
             "title-AAAAAAAAAAA": "First", "title-BBBBBBBBBBB": "Second"}
-    assert web.post(f"/group/{key}/file", data=data).status_code == 200
+    assert web.post(f"/group/{key}/file", data=data).status_code == 303
     season = cfg.shows_dir / "Chan (2010)" / "Season 01"
     assert (season / "Chan - S01E01 - First.mp4").exists() and (season / "Chan - S01E02 - Second.mp4").exists()
-    assert b"1 unclassified" in web.get("/").data
+    assert b"1 waiting" in web.get("/").data
 
 
 def test_video_form_defaults_folder_to_existing_channel_folder(cfg):
     (cfg.videos_dir / "YouTube" / "VSauce").mkdir(parents=True)
     add_video(cfg, "Vsauce", "A", "AAAAAAAAAAA")
-    page = client(cfg).get("/").data.decode()
+    page = client(cfg).get("/?item=AAAAAAAAAAA").data.decode()
     assert 'name="folder" value="VSauce"' in page and "<option>VSauce</option>" in page
     assert "Videos/YouTube/" in page and 'data-combo="folders-AAAAAAAAAAA"' in page
 
@@ -449,7 +450,7 @@ def test_group_rows_renumber_and_keep_edits(cfg):
         "title-AAAAAAAAAAA": "Edited"}).data.decode()
     assert rows.startswith('<tbody id="group-rows">')
     assert 'name="episode-AAAAAAAAAAA" value="5"' in rows and 'name="episode-CCCCCCCCCCC" value="6"' in rows
-    assert 'name="episode-BBBBBBBBBBB" value=""' in rows and 'value="Edited"' in rows
+    assert "episode-BBBBBBBBBBB" not in rows and 'value="Edited"' in rows
 
 
 def test_new_show_year_override(cfg, conn):
@@ -485,7 +486,7 @@ def test_show_year_field_only_for_new_shows(cfg):
     assert 'name="show_year"' in kept and 'value="1990"' in kept
     done = web.post("/item/AAAAAAAAAAA/file", data={"type": "show", "title": "A", "show": "Fresh",
                                                    "season": "1", "episode": "1", "show_year": "1990"})
-    assert done.status_code == 200 and (cfg.shows_dir / "Fresh (1990)" / "Season 01").is_dir()
+    assert done.status_code == 303 and (cfg.shows_dir / "Fresh (1990)" / "Season 01").is_dir()
 
 
 def test_group_page_year_follows_show_choice(cfg):
@@ -495,7 +496,7 @@ def test_group_page_year_follows_show_choice(cfg):
     from youtarr_routarr import group_key
     key = group_key("Chan")
     web = client(cfg)
-    page = web.get(f"/group/{key}").data.decode()
+    page = web.get(f"/group/{key}", follow_redirects=True).data.decode()
     assert 'id="group-year"' in page and 'name="show_year"' in page and 'value="2010"' in page
     old = web.get(f"/group/{key}/rows", query_string={"show": "Old", "include-BBBBBBBBBBB": "on"}).data.decode()
     assert 'hx-swap-oob="true"' in old and 'name="show_year"' not in old
@@ -503,7 +504,7 @@ def test_group_page_year_follows_show_choice(cfg):
     assert 'name="show_year"' in new and 'value="2011"' in new
     data = {"show": "New", "season": "1", "show_year": "2003", "include-AAAAAAAAAAA": "on",
             "episode-AAAAAAAAAAA": "1", "title-AAAAAAAAAAA": "First"}
-    assert web.post(f"/group/{key}/file", data=data).status_code == 200
+    assert web.post(f"/group/{key}/file", data=data).status_code == 303
     assert (cfg.shows_dir / "New (2003)" / "Season 01" / "New - S01E01 - First.mp4").exists()
 
 
@@ -531,7 +532,7 @@ def test_movie_form_suggests_clean_title_and_offers_full_one(cfg):
     plain = add_video(cfg, "C", "Plain", "BBBBBBBBBBB")
     assert "Use the full title" not in web.get("/item/BBBBBBBBBBB/fields?type=movie").data.decode()
     done = web.post("/item/AAAAAAAAAAA/file", data={"type": "movie", "title": "Odd Girl", "year": "2021"})
-    assert done.status_code == 200 and (cfg.movies_dir / "Odd Girl (2021)" / "Odd Girl (2021).mp4").exists()
+    assert done.status_code == 303 and (cfg.movies_dir / "Odd Girl (2021)" / "Odd Girl (2021).mp4").exists()
     assert plain.exists() and item.path.exists()
 
 
@@ -599,7 +600,7 @@ def test_group_specials_go_to_season_zero_and_number_separately(cfg):
     from youtarr_routarr import group_key
     web = client(cfg)
     key = group_key("Chan")
-    page = web.get(f"/group/{key}").data.decode()  # titles with "special" are pre-ticked
+    page = web.get(f"/group/{key}", follow_redirects=True).data.decode()  # titles with "special" are pre-ticked
     assert 'name="special-SSSSSSSSSSS" checked' in page and 'name="special-AAAAAAAAAAA" checked' not in page
     rows = web.get(f"/group/{key}/rows", query_string={
         "show": "Chan", "season": "1", "include-SSSSSSSSSSS": "on", "include-AAAAAAAAAAA": "on",
@@ -610,7 +611,7 @@ def test_group_specials_go_to_season_zero_and_number_separately(cfg):
             "include-BBBBBBBBBBB": "on", "special-SSSSSSSSSSS": "on",
             "episode-SSSSSSSSSSS": "1", "episode-AAAAAAAAAAA": "1", "episode-BBBBBBBBBBB": "2",
             "title-SSSSSSSSSSS": "Bonus Special", "title-AAAAAAAAAAA": "First", "title-BBBBBBBBBBB": "Second"}
-    assert web.post(f"/group/{key}/file", data=data).status_code == 200
+    assert web.post(f"/group/{key}/file", data=data).status_code == 303
     show = cfg.shows_dir / "Chan (2010)"
     assert (show / "Season 00" / "Chan - S00E01 - Bonus Special.mp4").exists()
     assert (show / "Season 01" / "Chan - S01E01 - First.mp4").exists()
@@ -785,7 +786,8 @@ def test_music_form_prefills_and_files_over_http(cfg):
     assert 'value="The Album"' in page and 'value="2018"' in page
     posted = web.post(f"/item/{item.video_id}/file", data={
         "type": "music", "artist": "Band", "album": "The Album", "title": "Big Hit", "year": "2018", "track": ""})
-    assert posted.status_code == 200 and "Filed 1 video" in posted.get_data(as_text=True)
+    assert posted.status_code == 303
+    assert "Filed “Big Hit”." in web.get(posted.headers["Location"]).get_data(as_text=True)
     assert (cfg.music_dir / "Band" / "The Album" / "Big Hit.m4a").is_file()
 
 
@@ -894,9 +896,9 @@ def test_app_needs_at_least_one_library(cfg):
 def test_disabled_library_is_hidden_rejected_and_not_health_checked(cfg):
     add_video(cfg, "C", "A", "AAAAAAAAAAA")
     web = client(cfg, shows_dir=None, videos_dir=None)
-    page = web.get("/").data.decode()
+    page = web.get("/?item=AAAAAAAAAAA").data.decode()
     assert 'value="movie" checked' in page
-    assert 'value="show"' not in page and 'value="video"' not in page and "File as a show" not in page
+    assert 'value="show"' not in page and 'value="video"' not in page and 'name="ids"' not in page
     assert web.get("/healthz").status_code == 200
     response = web.post("/item/AAAAAAAAAAA/file", data={"type": "video", "title": "A", "name": "A"})
     assert b"The Videos library is turned off." in response.data
@@ -974,9 +976,9 @@ def test_audio_only_files_as_audio_and_nothing_else(cfg, conn):
 def test_audio_only_item_offers_only_audio_and_skips_the_group(cfg):
     add_audio(cfg, "Chan", "Song", "AAAAAAAAAAA")
     web = client(cfg)
-    page = web.get("/").data.decode()
-    assert 'value="music" checked' in page and 'name="artist"' in page and "Audio only" in page
-    assert 'value="video"' not in page and "File as a show" not in page
+    page = web.get("/?item=AAAAAAAAAAA").data.decode()
+    assert 'value="music" checked' in page and 'name="artist"' in page and "MP3 only" in page
+    assert 'value="video" disabled' in page and 'name="ids"' not in page
     from youtarr_routarr import group_key
     assert web.get(f"/group/{group_key('Chan')}").status_code == 404
     assert web.get("/stats").get_json()["queue"] == 1
@@ -985,7 +987,7 @@ def test_audio_only_item_offers_only_audio_and_skips_the_group(cfg):
 @needs_ffmpeg
 def test_audio_only_item_with_audio_off_is_listed_with_a_note(cfg):
     add_audio(cfg, "Chan", "Song", "AAAAAAAAAAA")
-    page = client(cfg, music_dir=None).get("/").data.decode()
+    page = client(cfg, music_dir=None).get("/?item=AAAAAAAAAAA").data.decode()
     assert "Chan - Song" in page or "Song" in page
     assert "Turn on the Audio library (MUSIC_FOLDER) to file this." in page
     assert 'type="radio"' not in page and "/item/AAAAAAAAAAA/file" not in page

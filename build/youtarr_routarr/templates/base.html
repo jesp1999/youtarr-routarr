@@ -3,18 +3,36 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}YoutarrRoutarr{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <title>{% block title %}Routarr{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/nocturne.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   <script src="{{ url_for('static', filename='htmx.min.js') }}" defer></script>
   <script src="{{ url_for('static', filename='combobox.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </head>
-<body>
-  <header>
-    <strong>YoutarrRoutarr</strong>
-    <nav><a href="{{ url_for('queue') }}">Queue</a> <a href="{{ url_for('filed') }}">Filed</a></nav>
-  </header>
-  {% if dry_run %}<p class="banner">Dry-run mode: previews work, but nothing is written to disk.</p>{% endif %}
-  <main>{% block content %}{% endblock %}</main>
-  <footer>YoutarrRoutarr is free software under the AGPL-3.0-or-later. <a href="{{ source_url }}">Source</a></footer>
+<body class="app">
+  <nav class="nav app-nav">
+    <div class="nav-brand">Routarr</div>
+    <div class="tabs">
+      {% for key, label, endpoint, count in [("queue", "Queue", "queue", nav.queue), ("history", "History", "filed", nav.history), ("settings", "Settings & health", "settings", none)] %}
+      <a class="btn btn-ghost tab" href="{{ url_for(endpoint) }}"{% if nav.active == key %} aria-current="page"{% endif %}>{{ label }}{% if count is not none %} <span class="count text-muted">{{ count }}</span>{% endif %}</a>
+      {% endfor %}
+    </div>
+    {% if dry_run %}<span class="tag tag-outline">DRY_RUN=1</span>{% else %}<span class="tag tag-neutral">Live</span>{% endif %}
+  </nav>
+  {% if dry_run %}
+  <div class="banner">
+    <span class="tag tag-accent">Dry run</span>
+    <span>Previews work; nothing is written. When they look right, set <code>DRY_RUN=0</code> in <code>.env</code> and run <code>docker compose up -d</code>.</span>
+  </div>
+  {% endif %}
+  {% block content %}{% endblock %}
+  {% if toast %}
+  <div class="toast" role="status">
+    <span>{{ toast.text }}</span>
+    {% if toast.undo %}<form method="post" action="{{ url_for('undo', video_id=toast.undo) }}"><button class="btn btn-ghost" name="then" value="reclassify">Undo</button></form>{% endif %}
+  </div>
+  {% endif %}
+  <footer class="foot text-muted">YoutarrRoutarr is free software under the AGPL-3.0-or-later. <a href="{{ source_url }}">Source</a></footer>
 </body>
 </html>

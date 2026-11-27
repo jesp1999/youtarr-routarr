@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Settings &amp; health · Routarr{% endblock %}
+{% block content %}
+<main class="sheet">
+  <div>
+    <h3>Settings &amp; health</h3>
+    <p class="text-muted small">Read-only. Settings live in <code>.env</code> — edit it and run <code>docker compose up -d</code>.</p>
+  </div>
+  <div class="libraries">
+    {% for card in cards %}
+    <div class="card elev-sm">
+      <div class="card-kicker">{{ card.label }}</div>
+      <div class="card-title">{{ card.title }}</div>
+      <div class="card-meta mono"><span>{{ card.path }}</span></div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="columns">
+    <section class="checks">
+      <h6>Checks</h6>
+      {% for check in checks %}
+      <div class="check-row">
+        <span class="tag {{ 'tag-neutral' if check.state == 'OK' else 'tag-outline' }}">{{ check.state }}</span>
+        <div><div>{{ check.title }}</div><div class="text-muted tiny">{{ check.detail }}</div></div>
+      </div>
+      {% endfor %}
+    </section>
+    <section class="environment">
+      <h6>Environment</h6>
+      <div class="scroll">
+        <table class="table">
+          <tbody>
+            {% for name, value, note in environment %}
+            <tr><td class="mono key">{{ name }}</td><td class="mono">{{ value }}</td><td class="text-muted tiny">{{ note }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</main>
+{% endblock %}

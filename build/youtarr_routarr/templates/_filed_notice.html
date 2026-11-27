@@ -1,5 +1,0 @@
-<div class="filed-notice" role="status">
-  <strong>Filed {{ plan.entries|length }} {{ "video" if plan.entries|length == 1 else "videos" }}.</strong>
-  <ul>{% for entry in plan.entries %}<li><code>{{ entry.dest }}</code></li>{% endfor %}</ul>
-  <a href="{{ url_for('filed') }}">View or undo filings</a>
-</div>

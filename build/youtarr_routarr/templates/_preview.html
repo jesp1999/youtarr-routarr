@@ -1,0 +1,18 @@
+{% if outcome.errors %}
+<div class="error" role="alert">
+  <strong>{% if outcome.refused %}Nothing was filed.{% else %}Can’t file this yet.{% endif %}</strong>
+  <ul>{% for error in outcome.errors %}<li>{{ error }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% set shown = outcome.preview %}
+{% if shown %}
+<div class="preview-block">
+  <h6>Will write · {{ shown.count }} file{{ "" if shown.count == 1 else "s" }}</h6>
+  <div class="preview">
+    <div class="preview-root">{{ shown.root }}</div>
+    {% for line in shown.lines %}<div class="preview-line"><span class="{{ 'main' if line.main else 'side' }}">{{ line.path }}</span><span class="note">{{ line.note }}</span></div>
+    {% endfor %}
+  </div>
+  <div class="text-muted tiny">{{ outcome.footnote }}</div>
+</div>
+{% endif %}

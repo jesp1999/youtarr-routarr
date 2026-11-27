@@ -1,0 +1,34 @@
+{% set bulk = panel.bulk %}
+<div class="panel-title">
+  <div class="card-kicker">{{ bulk.channel }} · {{ bulk.rows|length }} downloads</div>
+  <div class="card-title">File as show episodes</div>
+</div>
+<form id="panel-form" class="fields" method="post" action="{{ url_for('group_file', key=bulk.key) }}">
+  {# Filing takes a click: a disabled first submit button turns off the browser's submit-on-Enter. #}
+  <button type="submit" disabled hidden></button>
+  <div class="grid-bulk">
+    <div class="field"><label>Show</label><input class="input" name="show" value="{{ bulk.show }}" required autocomplete="off"
+      data-combo="all-shows" data-new-label="new show"
+      hx-get="{{ url_for('group_rows', key=bulk.key) }}" hx-trigger="change" hx-include="#panel-form" hx-target="#group-rows" hx-swap="outerHTML"></div>
+    <div class="field"><label>Season</label><input class="input" name="season" type="number" min="0" value="{{ bulk.season }}" required
+      hx-get="{{ url_for('group_rows', key=bulk.key) }}" hx-trigger="change" hx-include="#panel-form" hx-target="#group-rows" hx-swap="outerHTML"></div>
+    {% with oob = false %}{% include "_bulk_start.html" %}{% endwith %}
+  </div>
+  <template id="all-shows">{% for show in bulk.shows %}<option>{{ show }}</option>{% endfor %}</template>
+  {% with show_year = bulk.show_year, new_show = bulk.new_show, oob = false %}{% include "_show_year.html" %}{% endwith %}
+  <div class="field"><label>Show description, used for a new show</label><textarea class="input" name="show_plot" rows="2" placeholder="Defaults to the first video’s description">{{ bulk.show_plot }}</textarea></div>
+  <div class="scroll">
+    <table class="table episodes">
+      <thead><tr><th>Ep.</th><th>Title</th><th title="File into Season 0, shown as Specials">Special</th></tr></thead>
+      {% include "_group_rows.html" %}
+    </table>
+  </div>
+</form>
+<div id="preview" aria-live="polite" hx-post="{{ url_for('group_preview', key=bulk.key) }}" hx-include="#panel-form"
+  hx-trigger="change from:#panel-form delay:80ms, htmx:afterSettle from:#panel-form delay:30ms" hx-sync="this:replace">
+  {% with outcome = panel.outcome %}{% include "_preview.html" %}{% endwith %}
+</div>
+<div class="actions">
+  <button class="btn btn-primary grow" type="submit" form="panel-form">{% if dry_run %}Preview only — dry run{% else %}File {{ bulk.rows|length }} episodes{% endif %}</button>
+  {% if skip %}<a class="btn btn-secondary" href="/?item={{ skip }}">Skip</a>{% endif %}
+</div>

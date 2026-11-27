@@ -772,19 +772,14 @@ def _remove_dirs(directories: list[str]) -> None:
             pass  # not empty or already gone
 
 
-def undo_filing(cfg: Config, conn: sqlite3.Connection, video_id: str) -> list[str]:
-    """Remove what a filing created. Returns any paths left in place. Never touches the source."""
-    row = conn.execute("SELECT * FROM filings WHERE video_id = ?", (video_id,)).fetchone()
-    if row is None:
-        raise FilingError("That video is not filed.")
-    manifest = json.loads(row["manifest"])
+def undo_blocker(row: sqlite3.Row) -> str | None:
+    """Why a filing cannot be undone right now, or None. Undo must never delete a last copy."""
     # Extracted audio is a separate file, so a link count cannot tell whether the source survives.
     if (row["type"] == "music" and not os.path.exists(row["source_path"])
             and os.path.lexists(row["dest_path"])):
-        raise FilingError(
-            "The source download is gone, so this may be the last copy of the audio. Undo would delete it, "
-            "so nothing was changed.")
-    for record in manifest["files"]:
+        return ("The source download is gone, so this may be the last copy of the audio. Undo would delete it, "
+                "so nothing was changed.")
+    for record in json.loads(row["manifest"])["files"]:
         if record["role"] != "video":
             continue
         try:
@@ -792,9 +787,20 @@ def undo_filing(cfg: Config, conn: sqlite3.Connection, video_id: str) -> list[st
         except FileNotFoundError:
             continue
         if stat.st_ino == record["ino"] and stat.st_nlink < 2:
-            raise FilingError(
-                "The source copy is gone, so this is the last copy of the video. Undo would delete it, "
-                "so nothing was changed.")
+            return ("The source copy is gone, so this is the last copy of the video. Undo would delete it, "
+                    "so nothing was changed.")
+    return None
+
+
+def undo_filing(cfg: Config, conn: sqlite3.Connection, video_id: str) -> list[str]:
+    """Remove what a filing created. Returns any paths left in place. Never touches the source."""
+    row = conn.execute("SELECT * FROM filings WHERE video_id = ?", (video_id,)).fetchone()
+    if row is None:
+        raise FilingError("That video is not filed.")
+    blocked = undo_blocker(row)
+    if blocked:
+        raise FilingError(blocked)
+    manifest = json.loads(row["manifest"])
 
     kept: list[str] = []
     _remove_files(manifest, kept)

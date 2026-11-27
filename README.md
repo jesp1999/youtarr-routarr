@@ -177,7 +177,7 @@ type and the **Local information only** provider:
 | Type | Path, inside the library folder |
 |---|---|
 | Show | `Show (Year)/Season 01/Show - S01E01 - Title.ext`, plus `tvshow.nfo` and `poster.jpg` |
-| Special | `Show (Year)/Season 00/Show - S00E01 - Title.ext`, listed as Specials. Tick **Special** per row on the bulk page (titles containing "special" or "bonus" are pre-ticked). Specials never set the show's year, poster or plot |
+| Special | `Show (Year)/Season 00/Show - S00E01 - Title.ext`, listed as Specials. Tick **Special**, per episode when filing several (titles containing "special" or "bonus" are pre-ticked). Specials never set the show's year, poster or plot |
 | Movie | `Title (Year)/Title (Year).ext`, plus an NFO and `poster.jpg` |
 | Video | `<VIDEOS_SUBDIR>/<Folder>/Name/Name.ext`, plus an NFO and `poster.jpg`. Pick an existing folder or type a new one; `/` nests |
 | Audio | `Artist/Album/[NN - ]Title.ext` |
@@ -223,8 +223,12 @@ dashboards.
 - **Undo** removes only files that are unchanged since filing. It refuses when the source download
   is gone, because the library copy may then be the last one.
 - **Queue age** is tracked in the database, because Youtarr sets file times to the upload date.
-- **Bulk filing** groups by channel and sorts by playlist position when known, otherwise by upload
-  date.
+- **Filing one download:** click it in the queue, check the preview of every file that will be
+  written, then press **File**. Pressing Enter in a field never files.
+- **Bulk filing:** tick several downloads from one channel to file them as episodes. They are sorted
+  by playlist position when known, otherwise by upload date.
+- **Settings & health** is a read-only page that checks mounts, permissions and alerts, and lists the
+  settings in use. It never shows your password or webhook addresses.
 - **One media mount** is deliberate. The whole of `MEDIA_ROOT` is writable by the app, so safety
   inside it depends on the app's code rather than the mount.
 
@@ -236,7 +240,8 @@ uv pip install --python .venv/bin/python -r build/requirements.txt pytest
 .venv/bin/python -m pytest tests
 ```
 
-Some tests need `ffmpeg` and Docker Compose, and are skipped without them.
+Some tests need `ffmpeg` and Docker Compose, and are skipped without them. The interface uses the
+Nocturne stylesheet in `static/css/nocturne.css`; layout rules go in `app.css` and use its tokens.
 
 ## License
 

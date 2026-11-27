@@ -1,0 +1,31 @@
+{% set item = panel.item %}
+{% set ctx = panel.ctx %}
+<div class="panel-title">
+  <div class="card-kicker">{{ item.channel }} · {{ item.upload_date or "No upload date" }}</div>
+  <div class="card-title">{{ item.title }}</div>
+  <div class="card-meta">{{ "%.1f"|format(item.size / 1048576) }} MB{% if not item.has_real_id %} · No YouTube ID{% endif %}</div>
+</div>
+{% if item.plot %}<details class="plot"><summary>Description</summary><p>{{ item.plot }}</p></details>{% endif %}
+<form id="panel-form" class="fields" method="post" action="{{ url_for('file_item', video_id=item.video_id) }}">
+  {# Filing takes a click: a disabled first submit button turns off the browser's submit-on-Enter. #}
+  <button type="submit" disabled hidden></button>
+  <div class="field">
+    <label>File as</label>
+    <div class="seg seg-full" role="radiogroup" aria-label="File as">
+      {% for value, label in types %}
+      <label class="seg-opt{% if item.audio_only and value != 'music' %} off{% endif %}"><input type="radio" name="type" value="{{ value }}"{% if value == ctx.kind %} checked{% endif %}{% if item.audio_only and value != 'music' %} disabled{% endif %}
+        hx-get="{{ url_for('fields', video_id=item.video_id) }}" hx-trigger="change" hx-target="#fields-{{ item.video_id }}">{{ label }}</label>
+      {% endfor %}
+    </div>
+    {% if item.audio_only %}<div class="text-muted tiny">MP3-only download — can only be filed as audio.</div>{% endif %}
+  </div>
+  <div id="fields-{{ item.video_id }}" class="fields">{% include "_fields_inner.html" %}</div>
+</form>
+<div id="preview" aria-live="polite" hx-post="{{ url_for('preview', video_id=item.video_id) }}" hx-include="#panel-form"
+  hx-trigger="change from:#panel-form delay:80ms, htmx:afterSettle from:#panel-form delay:30ms" hx-sync="this:replace">
+  {% with outcome = panel.outcome %}{% include "_preview.html" %}{% endwith %}
+</div>
+<div class="actions">
+  <button class="btn btn-primary grow" type="submit" form="panel-form">{{ "Preview only — dry run" if dry_run else "File" }}</button>
+  {% if skip %}<a class="btn btn-secondary" href="/?item={{ skip }}">Skip</a>{% endif %}
+</div>

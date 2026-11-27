@@ -1,50 +1,50 @@
 {% set item = ctx.item %}
 {% set vid = item.video_id %}
+{% set v = ctx["values"] %}
+{% macro full_title(note) %}<div class="text-muted tiny">{{ note }} <button type="button" class="btn btn-ghost tiny" onclick="const i = this.closest('.field').querySelector('input'); i.value = {{ item.title|tojson|forceescape }}; i.dispatchEvent(new Event('change', {bubbles: true}))">Use the full title</button></div>{% endmacro %}
 {% if ctx.kind == "show" %}
-<label>Episode title <input name="title" value="{{ item.title }}" required></label>
-<label>Show
-  <input name="show" value="{{ ctx.show }}" required autocomplete="off"
+<div class="grid-show">
+  <div class="field at-show"><label>Show</label><input class="input" name="show" value="{{ v.show }}" required autocomplete="off"
     data-combo="shows-{{ vid }}" data-new-label="new show"
-    hx-get="{{ url_for('episode_field', video_id=vid) }}" hx-trigger="change" hx-include="closest form"
-    hx-target="#episode-{{ vid }}" hx-swap="outerHTML">
-</label>
-<template id="shows-{{ vid }}">{% for show in ctx.shows %}<option>{{ show }}</option>{% endfor %}</template>
-<div class="row">
-  <label>Season <input name="season" type="number" min="0" value="1" required
-    hx-get="{{ url_for('episode_field', video_id=vid) }}" hx-trigger="change" hx-include="closest form"
-    hx-target="#episode-{{ vid }}" hx-swap="outerHTML"></label>
+    hx-get="{{ url_for('episode_field', video_id=vid) }}" hx-trigger="change" hx-include="closest form" hx-target="#episode-{{ vid }}" hx-swap="outerHTML"></div>
+  <div class="field at-title"><label>Episode title</label><input class="input" name="title" value="{{ v.title }}" required></div>
   {% with next_episode = ctx.next_episode, new_show = ctx.new_show, show_year = ctx.show_year %}{% include "_episode.html" %}{% endwith %}
 </div>
-<label>Show description, used for a new show <textarea name="show_plot" rows="2" placeholder="Defaults to this video's description"></textarea></label>
-{% elif ctx.kind == "movie" %}
-<label>Title <input name="title" value="{{ ctx.movie_title }}" required>
-  {% if ctx.movie_title != item.title %}<span class="hint">Shortened from the YouTube title.
-    <button type="button" class="link" onclick="this.closest('label').querySelector('input').value = {{ item.title|tojson|forceescape }}">Use the full title</button></span>{% endif %}
-</label>
-<label>Year <input name="year" type="number" min="1800" max="2999" value="{{ item.year or '' }}" required></label>
-{% elif ctx.kind == "music" %}
-<label>Artist
-  <input name="artist" value="{{ ctx.music_artist }}" required autocomplete="off"
-    data-combo="artists-{{ vid }}" data-new-label="new artist">
-</label>
-<template id="artists-{{ vid }}">{% for artist in ctx.artists %}<option>{{ artist }}</option>{% endfor %}</template>
-<label>Album <input name="album" value="{{ ctx.music_album }}" required></label>
-<label>Title <input name="title" value="{{ ctx.music_title }}" required>
-  {% if ctx.music_title != item.title %}<span class="hint">Cleaned from the YouTube title.
-    <button type="button" class="link" onclick="this.closest('label').querySelector('input').value = {{ item.title|tojson|forceescape }}">Use the full title</button></span>{% endif %}
-</label>
-<div class="row">
-  <label>Track <input name="track" type="number" min="1" placeholder="optional"></label>
-  <label>Year <input name="year" type="number" min="1800" max="2999" value="{{ ctx.music_year or '' }}" placeholder="optional"></label>
+<template id="shows-{{ vid }}">{% for show in ctx.shows %}<option>{{ show }}</option>{% endfor %}</template>
+<div class="grid-season">
+  <div class="field"><label>Season</label><input class="input" name="season" type="number" min="0" value="{{ v.season }}" required
+    hx-get="{{ url_for('episode_field', video_id=vid) }}" hx-trigger="change" hx-include="closest form" hx-target="#episode-{{ vid }}" hx-swap="outerHTML"></div>
+  <label class="check"><input type="checkbox" name="special"{% if v.special %} checked{% endif %}
+    hx-get="{{ url_for('episode_field', video_id=vid) }}" hx-trigger="change" hx-include="closest form" hx-target="#episode-{{ vid }}" hx-swap="outerHTML">
+    Special — files under Season 00</label>
 </div>
-<span class="hint">Saves the audio only, copied from the video without re-encoding. Youtarr's copy of the video is not touched.</span>
+<div class="field"><label>Show description, used for a new show</label><textarea class="input" name="show_plot" rows="2" placeholder="Defaults to this video’s description">{{ v.show_plot }}</textarea></div>
+{% elif ctx.kind == "movie" %}
+<div class="grid-year">
+  <div class="field"><label>Title</label><input class="input" name="title" value="{{ v.title }}" required>
+    {% if v.title != item.title %}{{ full_title("Shortened from the YouTube title.") }}{% endif %}</div>
+  <div class="field"><label>Year</label><input class="input" name="year" type="number" min="1800" max="2999" value="{{ v.year }}" required></div>
+</div>
+{% elif ctx.kind == "music" %}
+<div class="grid-audio">
+  <div class="field"><label>Artist</label><input class="input" name="artist" value="{{ v.artist }}" required autocomplete="off"
+    data-combo="artists-{{ vid }}" data-new-label="new artist"></div>
+  <div class="field"><label>Album</label><input class="input" name="album" value="{{ v.album }}" required></div>
+  <div class="field"><label>Track</label><input class="input" name="track" type="number" min="1" value="{{ v.track }}" placeholder="–"></div>
+</div>
+<template id="artists-{{ vid }}">{% for artist in ctx.artists %}<option>{{ artist }}</option>{% endfor %}</template>
+<div class="grid-year">
+  <div class="field"><label>Title</label><input class="input" name="title" value="{{ v.title }}" required>
+    {% if v.title != item.title %}{{ full_title("Cleaned from the YouTube title.") }}{% endif %}</div>
+  <div class="field"><label>Year</label><input class="input" name="year" type="number" min="1800" max="2999" value="{{ v.year }}" placeholder="–"></div>
+</div>
+<div class="text-muted tiny">Saves the audio only, copied without re-encoding.</div>
 {% else %}
-<label>Folder
+<div class="field"><label>Folder — pick one or type a new one; / nests</label>
   <span class="path-field"><span class="prefix">{{ ctx.videos_prefix }}/</span>
-  <input name="folder" value="{{ ctx.folder }}" autocomplete="off" placeholder="leave blank for the top level"
-    data-combo="folders-{{ vid }}" data-new-label="new folder"></span>
-</label>
+  <input class="input" name="folder" value="{{ v.folder }}" autocomplete="off" placeholder="leave blank for the top level"
+    data-combo="folders-{{ vid }}" data-new-label="new folder"></span></div>
 <template id="folders-{{ vid }}">{% for folder in ctx.folders %}<option>{{ folder }}</option>{% endfor %}</template>
-<label>Name in the Videos library <input name="name" value="{{ item.title }}" required></label>
-<input type="hidden" name="title" value="{{ item.title }}">
+<div class="field"><label>Name</label><input class="input" name="name" value="{{ v.name }}" required></div>
+<input type="hidden" name="title" value="{{ v.title }}">
 {% endif %}

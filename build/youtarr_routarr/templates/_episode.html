@@ -1,7 +1,7 @@
 <span id="episode-{{ item.video_id }}" class="contents">
-  <label>Episode <input name="episode" type="number" min="1" value="{{ next_episode }}" required></label>
+  <div class="field at-episode"><label>Episode</label><input class="input" name="episode" type="number" min="1" value="{{ next_episode }}" required></div>
   {% if new_show %}
-  <label>Show year <span class="tag">new show</span>
-    <input name="show_year" type="number" min="1800" max="2999" value="{{ show_year or '' }}" required></label>
+  <div class="field at-year"><label>Year <span class="tag tag-accent">new</span></label>
+    <input class="input" name="show_year" type="number" min="1800" max="2999" value="{{ show_year or '' }}" required></div>
   {% endif %}
 </span>

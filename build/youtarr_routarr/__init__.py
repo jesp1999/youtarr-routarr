@@ -6,8 +6,9 @@ import re
 import threading
 from pathlib import Path
 
-from flask import Flask, Response, abort, g, make_response, redirect, render_template, request, send_file, url_for
+from flask import Flask, Response, abort, g, redirect, render_template, request, send_file, url_for
 
+from . import health, ui
 from .config import Config
 from .db import connect
 from .filing import (Classification, FilingError, apply_plan, build_plan, existing_artists, existing_shows,
@@ -19,8 +20,6 @@ from .notify import aged_ids, notify_added, record_seen, start_worker
 # Linked in the page footer: the AGPL asks that people using a hosted copy can get its source.
 # Change it if you run a modified version.
 SOURCE_URL = "https://github.com/jesp1999/youtarr-routarr"
-# Radio button labels on the queue page.
-TYPE_LABELS = {"show": "Show episode", "movie": "Movie", "video": "Video", "music": "Audio"}
 # Names reported by /healthz.
 HEALTH_NAMES = {"show": "shows", "movie": "movies", "video": "videos", "music": "music"}
 _write_lock = threading.Lock()
@@ -143,70 +142,174 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
                 return item
         abort(404)
 
-    def field_context(item: QueueItem, kind: str) -> dict:
+    def field_context(item: QueueItem, kind: str, data=None) -> dict:
+        """A form for one download. `values` holds the suggestions, overridden by anything posted."""
         if item.audio_only:
             kind = "music"
         elif kind not in cfg.enabled_types():
             kind = cfg.default_type()
-        show = item.playlist or item.channel
-        ctx = {"item": item, "kind": kind, "show": show}
+        ctx = {"item": item, "kind": kind}
         if kind == "show":
             shows = existing_shows(cfg, db())
-            show = _match_show(show, shows)
-            ctx.update(show=show, shows=shows, next_episode=next_episode(cfg, db(), show, 1),
-                       new_show=not show_exists(cfg, db(), show), show_year=item.year)
+            show = _match_show(item.playlist or item.channel, shows)
+            values = {"title": item.title, "show": show, "season": "1", "episode": "", "show_year": item.year or "",
+                      "show_plot": "", "special": ""}
         elif kind == "movie":
-            ctx.update(movie_title=suggest_movie_title(item.title))
+            values = {"title": suggest_movie_title(item.title), "year": item.year or ""}
         elif kind == "music":
-            ctx.update(artists=existing_artists(cfg), **{f"music_{k}": v for k, v in suggest_music(item).items()})
-        elif kind == "video":
+            suggested = suggest_music(item)
+            values = {"artist": suggested["artist"], "album": suggested["album"], "title": suggested["title"],
+                      "track": "", "year": suggested["year"] or ""}
+            ctx.update(artists=existing_artists(cfg))
+        else:
             folders = video_folders(cfg)
             folder = next((f for f in folders if f.casefold() == item.channel.casefold()), item.channel)
+            values = {"folder": folder, "name": item.title, "title": item.title}
             # Short prefix like "videos/YouTube/"; the preview shows the full path.
             prefix = videos_base(cfg).relative_to(cfg.videos_dir.parent).as_posix()
-            ctx.update(folders=folders, folder=folder, videos_prefix=prefix)
+            ctx.update(folders=folders, videos_prefix=prefix)
+        if data is not None:
+            values.update({key: data.get(key, "") for key in values if key in data or key == "special"})
+        if kind == "show":
+            name = str(values["show"]).strip() or item.channel
+            season = 0 if values["special"] else _season_arg(str(values["season"]))
+            suggested = next_episode(cfg, db(), name, season)
+            if data is None:
+                values["episode"] = suggested
+            ctx.update(shows=shows, next_episode=values["episode"] or suggested,
+                       new_show=not show_exists(cfg, db(), name), show_year=values["show_year"])
+        ctx["values"] = values
         return ctx
 
-    def from_form(item: QueueItem) -> Classification:
-        form = request.form
+    def from_data(item: QueueItem, data) -> Classification:
+        season = _int(str(data.get("season") or "")) if data.get("season") else 1
         return Classification(
-            type=form.get("type", ""),
-            title=(form.get("title") or item.title).strip(),
-            year=_int(form.get("year")),
-            show=(form.get("show") or "").strip() or None,
-            season=_int(form.get("season")) if form.get("season") else 1,
-            episode=_int(form.get("episode")),
-            show_plot=(form.get("show_plot") or "").strip() or None,
-            show_year=_int(form.get("show_year")),
-            name=(form.get("name") or "").strip() or None,
-            folder=(form.get("folder") or "").strip() or None,
-            artist=(form.get("artist") or "").strip() or None,
-            album=(form.get("album") or "").strip() or None,
-            track=_int(form.get("track")),
+            type=data.get("type", ""),
+            title=(str(data.get("title") or "") or item.title).strip(),
+            year=_int(str(data.get("year") or "")),
+            show=str(data.get("show") or "").strip() or None,
+            season=0 if data.get("special") else season,
+            episode=_int(str(data.get("episode") or "")),
+            show_plot=str(data.get("show_plot") or "").strip() or None,
+            show_year=_int(str(data.get("show_year") or "")),
+            name=str(data.get("name") or "").strip() or None,
+            folder=str(data.get("folder") or "").strip() or None,
+            artist=str(data.get("artist") or "").strip() or None,
+            album=str(data.get("album") or "").strip() or None,
+            track=_int(str(data.get("track") or "")),
         )
 
-    def run_plan(pairs_factory, apply: bool, done_target: str | None):
-        """Shared preview and file handler; htmx swaps the returned fragment."""
+    def planned(pairs_factory, bulk: bool) -> dict:
+        """Plan without writing, for the preview under a form."""
+        try:
+            with _write_lock:
+                plan = build_plan(cfg, db(), pairs_factory())
+        except FilingError as exc:
+            return {"errors": [str(exc)], "preview": None, "bulk": bulk}
+        audio = any(entry.cls.type == "music" for entry in plan.entries)
+        footnote = ui.FOOTNOTES["bulk" if bulk else "audio" if audio else "link"]
+        return {"errors": plan.errors, "preview": ui.preview(plan, bulk), "bulk": bulk, "footnote": footnote}
+
+    def file_pairs(pairs_factory):
+        """File what was posted. Returns (plan, errors); nothing is written in dry-run mode."""
         try:
             pairs = pairs_factory()
             with _write_lock:
                 plan = build_plan(cfg, db(), pairs)
-                if apply and plan.ok and not cfg.dry_run:
+                if plan.ok and not cfg.dry_run:
                     apply_plan(cfg, db(), plan)
                     if cfg.discord_added_webhook_url:
                         # Off the request thread: Discord being slow must not hold up the page.
                         threading.Thread(target=notify_added, args=(cfg, plan), daemon=True).start()
-                    html = render_template("_filed_notice.html", plan=plan)
-                    response = make_response(html)
-                    if done_target:
-                        response.headers["HX-Retarget"] = done_target
-                        response.headers["HX-Reswap"] = "outerHTML"
-                    return response
         except FilingError as exc:
-            return render_template("_plan.html", plan=None, errors=[str(exc)], applied=False,
-                                   requested=apply, dry_run=cfg.dry_run)
-        return render_template("_plan.html", plan=plan, errors=plan.errors, applied=False,
-                               requested=apply, dry_run=cfg.dry_run)
+            return None, [str(exc)]
+        return plan, plan.errors
+
+    def after_filing(order: list[str], video_ids: list[str]):
+        target = {"item": ui.next_after(order, video_ids)}
+        return redirect(url_for("queue", **{k: v for k, v in target.items() if v},
+                                filed=",".join(video_ids)), code=303)
+
+    def page(template: str, active: str, items: list[QueueItem] | None = None, **context):
+        """A full page, with the navigation counts."""
+        items = pending() if items is None else items
+        nav = {"active": active, "queue": len(items),
+               "history": db().execute("SELECT COUNT(*) FROM filings").fetchone()[0]}
+        return render_template(template, nav=nav, dry_run=cfg.dry_run, **context)
+
+    def bulk_context(chosen: list[QueueItem], data=None) -> dict:
+        """The episode table for several downloads from one channel."""
+        shows = existing_shows(cfg, db())
+        show = _match_show(chosen[0].channel, shows)
+        season = 1
+        if data is not None:
+            show = (data.get("show") or "").strip() or show
+            season = _season_arg(data.get("season"))
+        counters = {season: next_episode(cfg, db(), show, season), 0: next_episode(cfg, db(), show, 0)}
+        start = counters[season]
+        rows = []
+        for item in chosen:
+            if data is None:
+                special = bool(SPECIAL_TITLE.search(item.title))  # a guess; the user reviews the ticks
+                row_season = 0 if special else season
+                rows.append((item, counters[row_season], item.title, special))
+                counters[row_season] += 1
+            else:
+                rows.append((item, data.get(f"episode-{item.video_id}", ""),
+                             data.get(f"title-{item.video_id}") or item.title,
+                             data.get(f"special-{item.video_id}") is not None))
+        return {
+            "key": group_key(chosen[0].channel), "channel": chosen[0].channel, "rows": rows, "shows": shows,
+            "show": show, "season": season, "start": (data or {}).get("start") or start,
+            "show_plot": (data or {}).get("show_plot", ""),
+            "show_year": (data or {}).get("show_year") or _earliest_year(chosen),
+            "new_show": not show_exists(cfg, db(), show),
+        }
+
+    def bulk_pairs(chosen: list[QueueItem], bulk: dict) -> list[tuple[QueueItem, Classification]]:
+        return [(item, Classification(
+            type="show", show=bulk["show"] or None, season=0 if special else bulk["season"], title=title.strip(),
+            episode=_int(str(episode)), show_plot=bulk["show_plot"] or None,
+            show_year=_int(str(bulk["show_year"] or ""))))
+            for item, episode, title, special in bulk["rows"]]
+
+    def render_queue(selected: list[str], kind: str = "", data=None, outcome=None, toast=None):
+        """The inbox: the grouped queue, plus a panel for whatever is selected."""
+        items = pending()
+        ids = [item.video_id for item in items]
+        record_seen(db(), ids)
+        now = _utcnow()
+        aged = aged_ids(db(), ids, cfg.queue_ping_days, now)
+        by_id = {item.video_id: item for item in items}
+        chosen = [by_id[video_id] for video_id in selected if video_id in by_id]
+        if len(chosen) > 1:
+            # Bulk filing is for episodes of one channel; audio-only downloads cannot be episodes.
+            channel = chosen[0].channel
+            episodes = [i for i in chosen if i.channel == channel and not i.audio_only]
+            chosen = episodes if cfg.shows_dir is not None and episodes else chosen[:1]
+            chosen = sorted(chosen, key=sort_key)
+        order = ui.display_order(items)
+        panel = {"mode": "empty"}
+        if len(chosen) == 1:
+            item = chosen[0]
+            if item.audio_only and cfg.music_dir is None:
+                panel = {"mode": "blocked", "item": item}
+            else:
+                ctx = field_context(item, kind, data)
+                posted = {**ctx["values"], "type": ctx["kind"]}
+                panel = {"mode": "single", "ctx": ctx, "item": item,
+                         "outcome": outcome or planned(lambda: [(item, from_data(item, posted))], False)}
+        elif chosen:
+            bulk = bulk_context(chosen, data)
+            panel = {"mode": "bulk", "bulk": bulk,
+                     "outcome": outcome or planned(lambda: bulk_pairs(chosen, bulk), True)}
+        picked = [item.video_id for item in chosen]
+        return page(
+            "queue.html", "queue", items=items, groups=ui.groups(items), panel=panel, selected=picked,
+            skip=ui.next_after(order, picked), toast=toast, ages=ui.ages(db(), now), aged=set(aged),
+            types=[(k, ui.TYPE_LABELS[k]) for k in cfg.enabled_types()],
+            default_label=ui.TYPE_LABELS[cfg.default_type()], shows_on=cfg.shows_dir is not None,
+            music_on=cfg.music_dir is not None, ping_days=cfg.queue_ping_days)
 
     @app.get("/healthz")
     def healthz():
@@ -229,19 +332,13 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
 
     @app.get("/")
     def queue():
-        items = sorted(pending(), key=sort_key)
-        record_seen(db(), [item.video_id for item in items])
-        aged = aged_ids(db(), [item.video_id for item in items], cfg.queue_ping_days,
-                        _utcnow())
-        groups: dict[str, list[QueueItem]] = {}
-        for item in items:
-            groups.setdefault(item.channel, []).append(item)
-        return render_template(
-            "queue.html", groups=sorted(groups.items(), key=lambda kv: kv[0].casefold()),
-            types=[(kind, TYPE_LABELS[kind]) for kind in cfg.enabled_types()], default_type=cfg.default_type(),
-            shows_on=cfg.shows_dir is not None, music_on=cfg.music_dir is not None,
-            total=len(items), aged=len(aged), group_key=group_key, field_context=field_context,
-            dry_run=cfg.dry_run, ping_days=cfg.queue_ping_days)
+        """Selection lives in the address: ?item=<id> or ?ids=a,b,c (ids may also repeat)."""
+        selected = [video_id for value in request.args.getlist("ids") for video_id in value.split(",") if video_id]
+        if request.args.get("item"):
+            selected = [request.args["item"]]
+        filed_ids = [v for v in request.args.get("filed", "").split(",") if v]
+        return render_queue(list(dict.fromkeys(selected)), kind=request.args.get("type", ""),
+                            toast=ui.filed_toast(db(), filed_ids))
 
     @app.get("/item/<video_id>/fields")
     def fields(video_id: str):
@@ -254,7 +351,7 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
         require_shows()
         item = pending_item(video_id)
         show = (request.args.get("show") or "").strip() or item.playlist or item.channel
-        season = _season_arg(request.args.get("season"))
+        season = 0 if request.args.get("special") else _season_arg(request.args.get("season"))
         return render_template("_episode.html", item=item,
                                next_episode=next_episode(cfg, db(), show, season),
                                new_show=not show_exists(cfg, db(), show),
@@ -270,12 +367,24 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
     @app.post("/item/<video_id>/preview")
     def preview(video_id: str):
         item = pending_item(video_id)
-        return run_plan(lambda: [(item, from_form(item))], False, None)
+        outcome = planned(lambda: [(item, from_data(item, request.form))], False)
+        return render_template("_preview.html", outcome=outcome)
 
     @app.post("/item/<video_id>/file")
     def file_item(video_id: str):
         item = pending_item(video_id)
-        return run_plan(lambda: [(item, from_form(item))], True, f"#card-{video_id}")
+        order = ui.display_order(pending())
+        plan, errors = file_pairs(lambda: [(item, from_data(item, request.form))])
+        if not errors and not cfg.dry_run:
+            return after_filing(order, [video_id])
+        toast = None
+        if not errors:
+            toast = {"text": f"Dry run — would file “{plan.entries[0].display}”. Nothing written.", "undo": None}
+        outcome = planned(lambda: [(item, from_data(item, request.form))], False)
+        outcome["errors"] = errors or outcome["errors"]
+        outcome["refused"] = bool(errors)
+        return render_queue([video_id], kind=request.form.get("type", ""), data=request.form,
+                            outcome=outcome, toast=toast)
 
     def require_shows() -> None:
         if cfg.shows_dir is None:
@@ -290,80 +399,87 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
 
     @app.get("/group/<key>")
     def group(key: str):
-        channel, items = group_items(key)
-        shows = existing_shows(cfg, db())
-        show = _match_show(channel, shows)
-        counters = {1: next_episode(cfg, db(), show, 1), 0: next_episode(cfg, db(), show, 0)}
-        rows = []
-        for item in items:
-            special = bool(SPECIAL_TITLE.search(item.title))  # a guess; the user reviews the ticks
-            season = 0 if special else 1
-            rows.append((item, counters[season], item.title, True, special))
-            counters[season] += 1
-        return render_template("group.html", key=key, channel=channel, show=show, rows=rows,
-                               shows=shows, dry_run=cfg.dry_run, oob=False,
-                               new_show=not show_exists(cfg, db(), show), show_year=_earliest_year(items))
+        """Old links to a channel's bulk page now select the whole channel in the inbox."""
+        _channel, items = group_items(key)
+        return redirect(url_for("queue", ids=",".join(item.video_id for item in items)))
 
     @app.get("/group/<key>/rows")
     def group_rows(key: str):
-        """Renumber the table after the show or season changes, keeping edited titles and ticks."""
+        """Renumber the table after a field changes, keeping edited titles and ticks."""
         channel, items = group_items(key)
         args = request.args
         show = (args.get("show") or "").strip() or channel
         season = _season_arg(args.get("season"))
         numbers = {season: next_episode(cfg, db(), show, season), 0: next_episode(cfg, db(), show, 0)}
-        rows = []
+        # A new show or season starts from its next free episode; otherwise "From ep." wins.
+        reset = request.headers.get("HX-Trigger-Name") in ("show", "season")
+        start = None if reset else _year_arg(args.get("start"))
+        if start is not None:
+            numbers[season] = start
         chosen = [item for item in items if args.get(f"include-{item.video_id}") is not None]
         year = _year_arg(args.get("show_year")) or _earliest_year(chosen or items)
-        for item in items:
-            included = item in chosen
+        first = numbers[season]
+        rows = []
+        for item in chosen:
             special = args.get(f"special-{item.video_id}") is not None
             row_season = 0 if special else season
-            rows.append((item, numbers[row_season] if included else "",
-                         args.get(f"title-{item.video_id}") or item.title, included, special))
-            if included:
-                numbers[row_season] += 1
-        # The year field sits above the table, so it is swapped out-of-band. Keep the tbody first:
-        # htmx parses inside a <template>, and a leading span makes the parser drop the tbody.
-        return (render_template("_group_rows.html", rows=rows, key=key)
+            rows.append((item, numbers[row_season], args.get(f"title-{item.video_id}") or item.title, special))
+            numbers[row_season] += 1
+        bulk = {"key": key, "rows": rows, "season": season, "start": first}
+        # The other fields sit outside the table, so they are swapped out-of-band. Keep the tbody
+        # first: htmx parses inside a <template>, and a leading span makes the parser drop the tbody.
+        html = (render_template("_group_rows.html", bulk=bulk)
                 + render_template("_show_year.html", oob=True, show_year=year,
                                   new_show=not show_exists(cfg, db(), show)))
+        if reset:
+            html += render_template("_bulk_start.html", oob=True, bulk=bulk)
+        return html
+
+    def posted_bulk(key: str) -> tuple[list[QueueItem], dict]:
+        _channel, items = group_items(key)
+        chosen = [item for item in items if request.form.get(f"include-{item.video_id}") is not None]
+        if not chosen:
+            raise FilingError("Select at least one video.")
+        bulk = bulk_context(chosen, request.form)
+        bulk["season"] = _int(request.form.get("season")) if request.form.get("season") else 1
+        bulk["show"] = (request.form.get("show") or "").strip() or None
+        bulk["show_year"] = request.form.get("show_year", "")
+        return chosen, bulk
 
     def group_pairs(key: str) -> list[tuple[QueueItem, Classification]]:
-        _channel, items = group_items(key)
-        form = request.form
-        show = (form.get("show") or "").strip() or None
-        season = _int(form.get("season")) if form.get("season") else 1
-        show_year = _int(form.get("show_year"))
-        pairs = []
-        for item in items:
-            if form.get(f"include-{item.video_id}") is None:
-                continue
-            special = form.get(f"special-{item.video_id}") is not None
-            pairs.append((item, Classification(
-                type="show", show=show, season=0 if special else season,
-                title=(form.get(f"title-{item.video_id}") or item.title).strip(),
-                episode=_int(form.get(f"episode-{item.video_id}")),
-                show_plot=(form.get("show_plot") or "").strip() or None,
-                show_year=show_year)))
-        if not pairs:
-            raise FilingError("Select at least one video.")
-        return pairs
+        return bulk_pairs(*posted_bulk(key))
 
     @app.post("/group/<key>/preview")
     def group_preview(key: str):
-        return run_plan(lambda: group_pairs(key), False, None)
+        return render_template("_preview.html", outcome=planned(lambda: group_pairs(key), True))
 
     @app.post("/group/<key>/file")
     def group_file(key: str):
-        return run_plan(lambda: group_pairs(key), True, "#group-form")
+        order = ui.display_order(pending())
+        plan, errors = file_pairs(lambda: group_pairs(key))
+        if not errors and not cfg.dry_run:
+            return after_filing(order, [i for i in order if i in {e.item.video_id for e in plan.entries}])
+        toast = None
+        if not errors:
+            count = len(plan.entries)
+            toast = {"text": f"Dry run — would file {count} item{'s' if count != 1 else ''}. Nothing written.",
+                     "undo": None}
+        selected = [k.removeprefix("include-") for k in request.form if k.startswith("include-")]
+        if not selected:
+            return render_queue([], toast={"text": "Select at least one video.", "undo": None})
+        if len(selected) == 1:
+            return render_queue(selected, kind="show", toast=toast or {"text": " ".join(errors), "undo": None})
+        outcome = planned(lambda: group_pairs(key), True)
+        outcome["errors"] = errors or outcome["errors"]
+        outcome["refused"] = bool(errors)
+        return render_queue(selected, data=request.form, outcome=outcome, toast=toast)
+
+    def history_page(error=None, kept=None):
+        return page("filed.html", "history", rows=ui.history(cfg, db()), error=error, kept=kept)
 
     @app.get("/filed")
     def filed():
-        rows = db().execute(
-            "SELECT f.*, s.name AS show_name FROM filings f LEFT JOIN shows s ON s.id = f.show_id"
-            " ORDER BY f.filed_at DESC, f.video_id").fetchall()
-        return render_template("filed.html", rows=rows, dry_run=cfg.dry_run, error=None, kept=None)
+        return history_page()
 
     @app.post("/filed/<video_id>/undo")
     def undo(video_id: str):
@@ -377,11 +493,16 @@ def create_app(cfg: Config | None = None, start_background: bool = True) -> Flas
             except FilingError as exc:
                 error = str(exc)
         if not error and request.form.get("then") == "reclassify":
-            return redirect(url_for("queue") + f"#card-{video_id}", code=303)
-        rows = db().execute(
-            "SELECT f.*, s.name AS show_name FROM filings f LEFT JOIN shows s ON s.id = f.show_id"
-            " ORDER BY f.filed_at DESC, f.video_id").fetchall()
-        return render_template("filed.html", rows=rows, dry_run=cfg.dry_run, error=error, kept=kept)
+            return redirect(url_for("queue", item=video_id), code=303)
+        return history_page(error, kept)
+
+    @app.get("/settings")
+    def settings():
+        items = pending()
+        ids = [item.video_id for item in items]
+        waiting = len(aged_ids(db(), ids, cfg.queue_ping_days, _utcnow()))
+        return page("settings.html", "settings", items=items, cards=health.library_cards(cfg, db()),
+                    checks=health.checks(cfg, db(), waiting), environment=health.environment(cfg))
 
     return app
 
