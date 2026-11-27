@@ -6,6 +6,7 @@ import json
 import os
 import re
 import subprocess
+import threading
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -62,8 +63,19 @@ def _date(raw: object) -> str | None:
     return f"{match[1]}-{match[2]}-{match[3]}" if match else None
 
 
-# Info files reach 700 KB, so keep only the fields used, keyed by mtime.
+# Info files reach many megabytes, mostly lists of formats and captions, so only these fields are
+# kept, cached by modification time.
+INFO_KEYS = frozenset((
+    "title", "description", "upload_date", "channel", "uploader", "playlist", "playlist_title",
+    "playlist_index", "duration", "categories", "tags", "artist", "track", "album", "release_year", "creator"))
 _info_cache: dict[str, tuple[int, dict]] = {}
+# One file is parsed at a time: several page loads parsing at once can exhaust the container's memory.
+_info_lock = threading.Lock()
+
+
+def _wanted(pairs: list[tuple[str, object]]) -> dict:
+    """Drop unused fields while parsing, so nested lists never build up in memory."""
+    return {key: value for key, value in pairs if key in INFO_KEYS}
 
 
 def _read_info(info_dir: Path | None, video_id: str) -> dict:
@@ -74,18 +86,17 @@ def _read_info(info_dir: Path | None, video_id: str) -> dict:
         mtime = path.stat().st_mtime_ns
     except OSError:
         return {}
-    cached = _info_cache.get(str(path))
-    if cached and cached[0] == mtime:
-        return cached[1]
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    keep = ("title", "description", "upload_date", "channel", "uploader",
-            "playlist", "playlist_title", "playlist_index", "duration", "categories", "tags",
-            "artist", "track", "album", "release_year", "creator")
-    info = {key: raw.get(key) for key in keep}
-    _info_cache[str(path)] = (mtime, info)
+    with _info_lock:
+        cached = _info_cache.get(str(path))
+        if cached and cached[0] == mtime:
+            return cached[1]
+        try:
+            info = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_wanted)
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(info, dict):
+            return {}
+        _info_cache[str(path)] = (mtime, info)
     return info
 
 

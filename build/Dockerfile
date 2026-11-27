@@ -3,7 +3,8 @@ FROM python:3.13.7-slim-bookworm
 LABEL org.opencontainers.image.source="https://github.com/jesp1999/youtarr-routarr" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later"
 
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+# One malloc arena: Youtarr's info files are large, and per-thread arenas each keep their peak.
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 MALLOC_ARENA_MAX=1
 WORKDIR /app
 
 # ffmpeg and ffprobe extract and tag audio for the Music library.

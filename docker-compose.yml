@@ -56,4 +56,4 @@ services:
     deploy:
       resources:
         limits:
-          memory: "268435456" # 256MiB
+          memory: "536870912" # 512MiB: the largest Youtarr info file sets the peak
