@@ -1069,3 +1069,41 @@ def test_added_alert_names_the_library_after_its_folder(cfg, conn):
     plan = file_one(replace(cfg, movies_dir=folder), conn, by_id(cfg)["AAAAAAAAAAA"], Classification("movie", "A"))
     (embed, _thumb), = added_embeds(plan)
     assert {f["name"]: f["value"] for f in embed["fields"]}["Library"] == "My Film Shelf"
+
+
+# --- Youtarr's flat layout: every video sits directly in the channel folder -------------------
+
+
+def add_flat(cfg, title: str, vid: str, *suffixes: str) -> Path:
+    """Files for one download in a flat channel folder, e.g. suffixes ".mp4", ".jpg"."""
+    folder = cfg.queue_dir / "Chan"
+    folder.mkdir(exist_ok=True)
+    for suffix in suffixes:
+        (folder / f"Chan - {title} [{vid}]{suffix}").write_bytes(b"x")
+    return folder
+
+
+@pytest.mark.parametrize("partial", [".f137.mp4.part", ".mp4.ytdl"])
+def test_flat_layout_lists_finished_videos_while_another_downloads(cfg, partial):
+    add_flat(cfg, "Done", "AAAAAAAAAAA", ".mp4")
+    add_flat(cfg, "Busy", "BBBBBBBBBBB", partial)
+    assert [i.video_id for i in scan_queue(cfg.queue_dir, cfg.info_dir)] == ["AAAAAAAAAAA"]
+
+
+def test_flat_layout_hides_a_video_whose_own_download_is_still_running(cfg):
+    add_flat(cfg, "Busy", "BBBBBBBBBBB", ".mp4", ".f140.m4a.part")
+    assert scan_queue(cfg.queue_dir, cfg.info_dir) == []
+
+
+def test_flat_layout_does_not_borrow_the_channel_poster(cfg):
+    folder = add_flat(cfg, "Bare", "AAAAAAAAAAA", ".mp4")
+    (folder / "poster.jpg").write_bytes(b"channel art")
+    (item,) = scan_queue(cfg.queue_dir, cfg.info_dir)
+    assert item.thumb is None
+
+
+def test_a_videos_own_folder_still_supplies_its_poster(cfg):
+    video = add_video(cfg, "Chan", "A", "AAAAAAAAAAA", thumb=False)
+    (video.parent / "poster.jpg").write_bytes(b"video art")
+    (item,) = scan_queue(cfg.queue_dir, cfg.info_dir)
+    assert item.thumb == video.parent / "poster.jpg"

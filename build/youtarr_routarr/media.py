@@ -118,7 +118,7 @@ def _extract_id(path: Path, rel: str) -> tuple[str, bool]:
     return "file-" + hashlib.sha1(rel.encode("utf-8")).hexdigest()[:16], False
 
 
-def _sidecars(video: Path, names: list[str]) -> tuple[Path | None, Path | None, list[Path]]:
+def _sidecars(video: Path, names: list[str], video_id: str) -> tuple[Path | None, Path | None, list[Path]]:
     stem = video.stem
     thumb = fanart = None
     for ext in THUMB_EXTS:
@@ -129,7 +129,9 @@ def _sidecars(video: Path, names: list[str]) -> tuple[Path | None, Path | None, 
         if f"{stem}-fanart{ext}" in names:
             fanart = video.with_name(f"{stem}-fanart{ext}")
             break
-    if thumb is None and "poster.jpg" in names:
+    # Only from this video's own folder: in the flat layout, poster.jpg is the channel's artwork.
+    own_folder = ID_AT_FOLDER_END.search(video.parent.name)
+    if thumb is None and "poster.jpg" in names and own_folder and own_folder[1] == video_id:
         thumb = video.with_name("poster.jpg")
     subs = [video.with_name(name) for name in sorted(names)
             if name.startswith(stem + ".") and Path(name).suffix.lower() in SUB_EXTS]
@@ -170,6 +172,20 @@ def _is_audio_source(media: Path, names: list[str]) -> bool:
     return done.returncode == 0 and not done.stdout.strip()
 
 
+def _downloading(names: list[str]) -> tuple[set[str], bool]:
+    """IDs still being written in a folder, and whether some partial file cannot be matched to one."""
+    ids: set[str] = set()
+    unknown = False
+    for name in names:
+        if name.endswith((".part", ".ytdl")):
+            found = ID_IN_BRACKETS.findall(name)
+            if found:
+                ids.add(found[-1])
+            else:
+                unknown = True
+    return ids, unknown
+
+
 def scan_queue(queue_dir: Path, info_dir: Path | None = None) -> list[QueueItem]:
     """Every finished video, plus each audio-only download that has no video."""
     videos: list[QueueItem] = []
@@ -177,8 +193,9 @@ def scan_queue(queue_dir: Path, info_dir: Path | None = None) -> list[QueueItem]
     for dirpath, dirnames, filenames in os.walk(queue_dir, followlinks=False):
         dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
         directory = Path(dirpath)
-        if any(name.endswith((".part", ".ytdl")) for name in filenames):
-            continue  # a download is still being written here
+        busy, unknown = _downloading(filenames)
+        if unknown:
+            continue  # something is still being written here, and it could be any of these files
         for name in sorted(filenames):
             media = directory / name
             ext = media.suffix.lower()
@@ -189,8 +206,12 @@ def scan_queue(queue_dir: Path, info_dir: Path | None = None) -> list[QueueItem]
                 continue
             if _is_audio_source(media, filenames):
                 continue
+            item = _build_item(queue_dir, media, filenames, info_dir)
+            # The flat layout shares one folder between downloads, so skip only the unfinished ones.
+            if busy and (item.video_id in busy or not item.has_real_id):
+                continue
             found = audio if ext in AUDIO_EXTS else videos
-            found.append(_build_item(queue_dir, media, filenames, info_dir))
+            found.append(item)
     # The same download may have its video in one folder and its audio in another.
     video_ids = {item.video_id for item in videos}
     return videos + [item for item in audio if item.video_id not in video_ids]
@@ -211,7 +232,7 @@ def _build_item(queue_dir: Path, video: Path, names: list[str], info_dir: Path |
     name_year = YEAR_IN_NAME.search(video.stem)
     year = int(date[:4]) if date else (int(name_year[1]) if name_year else None)
     index = info.get("playlist_index")
-    thumb, fanart, subs = _sidecars(video, names)
+    thumb, fanart, subs = _sidecars(video, names, video_id)
     duration = info.get("duration")
     return QueueItem(
         video_id=video_id,
