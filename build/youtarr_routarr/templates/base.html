@@ -11,6 +11,8 @@
   <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </head>
 <body class="app">
+  <a class="skip" href="#main">Skip to main content</a>
+  {% block skip %}{% endblock %}
   <nav class="nav app-nav">
     <div class="nav-brand">Routarr</div>
     <div class="tabs">
@@ -21,16 +23,17 @@
     {% if dry_run %}<span class="tag tag-outline">DRY_RUN=1</span>{% else %}<span class="tag tag-neutral">Live</span>{% endif %}
   </nav>
   {% if dry_run %}
-  <div class="banner">
+  <div class="banner" role="region" aria-label="Dry run">
     <span class="tag tag-accent">Dry run</span>
     <span>Previews work; nothing is written. When they look right, set <code>DRY_RUN=0</code> in <code>.env</code> and run <code>docker compose up -d</code>.</span>
   </div>
   {% endif %}
   {% block content %}{% endblock %}
   {% if toast %}
-  <div class="toast" role="status">
-    <span>{{ toast.text }}</span>
+  <div class="toast" role="region" aria-label="Message">
+    <span role="status">{{ toast.text }}</span>
     {% if toast.undo %}<form method="post" action="{{ url_for('undo', video_id=toast.undo) }}"><button class="btn btn-ghost" name="then" value="reclassify">Undo</button></form>{% endif %}
+    <button type="button" class="btn btn-ghost dismiss">Dismiss</button>
   </div>
   {% endif %}
   <footer class="foot text-muted">YoutarrRoutarr is free software under the AGPL-3.0-or-later. <a href="{{ source_url }}">Source</a></footer>

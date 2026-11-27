@@ -7,8 +7,8 @@
 {% set shown = outcome.preview %}
 {% if shown %}
 <div class="preview-block">
-  <h6>Will write · {{ shown.count }} file{{ "" if shown.count == 1 else "s" }}</h6>
-  <div class="preview">
+  <h3 class="eyebrow">Will write · {{ shown.count }} file{{ "" if shown.count == 1 else "s" }}</h3>
+  <div class="preview" tabindex="0" role="region" aria-label="Files that will be written">
     <div class="preview-root">{{ shown.root }}</div>
     {% for line in shown.lines %}<div class="preview-line"><span class="{{ 'main' if line.main else 'side' }}">{{ line.path }}</span><span class="note">{{ line.note }}</span></div>
     {% endfor %}

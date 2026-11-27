@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 {% block title %}History · Routarr{% endblock %}
 {% block content %}
-<main class="sheet">
-  <h3>History</h3>
+<main class="sheet" id="main" tabindex="-1">
+  <h1 class="title">History</h1>
   <p class="text-muted small lede">Undo removes only files unchanged since filing. It refuses when the source download is gone, because the library copy may be the last one.</p>
   {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
   {% if kept %}<div class="error" role="alert"><strong>Undone, but these files were left in place:</strong>
     <ul>{% for path in kept %}<li><code>{{ path }}</code></li>{% endfor %}</ul></div>{% endif %}
   {% if not rows %}<p class="empty">Nothing filed yet.</p>{% else %}
-  <div class="scroll">
+  <div class="scroll" tabindex="0" role="region" aria-label="Filings">
     <table class="table">
-      <thead><tr><th>Filed</th><th>Title</th><th>Library</th><th>Path</th><th></th></tr></thead>
+      <thead><tr><th>Filed</th><th>Title</th><th>Library</th><th>Path</th><th><span class="sr-only">Actions</span></th></tr></thead>
       <tbody>
         {% for row in rows %}
         <tr>
@@ -19,10 +19,10 @@
           <td><span class="tag tag-neutral">{{ row.library }}</span></td>
           <td class="mono side">{{ row.path }}</td>
           <td class="row-actions">
-            {% if row.blocked %}<span class="text-muted tiny" title="{{ row.blocked }}">Source gone — can’t undo</span>
+            {% if row.blocked %}<span class="text-muted tiny" title="{{ row.blocked }}">Source gone — can’t undo</span><span class="sr-only">{{ row.title }}: {{ row.blocked }}</span>
             {% else %}<form method="post" action="{{ url_for('undo', video_id=row.video_id) }}">
-              <button class="btn btn-secondary">Undo</button>
-              <button class="btn btn-ghost" name="then" value="reclassify">Reclassify</button>
+              <button class="btn btn-secondary" aria-label="Undo {{ row.title }}">Undo</button>
+              <button class="btn btn-ghost" name="then" value="reclassify" aria-label="Reclassify {{ row.title }}">Reclassify</button>
             </form>{% endif %}
           </td>
         </tr>

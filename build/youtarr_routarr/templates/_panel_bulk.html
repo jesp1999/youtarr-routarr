@@ -1,23 +1,23 @@
 {% set bulk = panel.bulk %}
 <div class="panel-title">
   <div class="card-kicker">{{ bulk.channel }} · {{ bulk.rows|length }} downloads</div>
-  <div class="card-title">File as show episodes</div>
+  <h2 class="card-title">File as show episodes</h2>
 </div>
 <form id="panel-form" class="fields" method="post" action="{{ url_for('group_file', key=bulk.key) }}">
   {# Filing takes a click: a disabled first submit button turns off the browser's submit-on-Enter. #}
   <button type="submit" disabled hidden></button>
   <div class="grid-bulk">
-    <div class="field"><label>Show</label><input class="input" name="show" value="{{ bulk.show }}" required autocomplete="off"
+    <div class="field"><label for="bulk-show">Show</label><input class="input" id="bulk-show" name="show" value="{{ bulk.show }}" required autocomplete="off"
       data-combo="all-shows" data-new-label="new show"
       hx-get="{{ url_for('group_rows', key=bulk.key) }}" hx-trigger="change" hx-include="#panel-form" hx-target="#group-rows" hx-swap="outerHTML"></div>
-    <div class="field"><label>Season</label><input class="input" name="season" type="number" min="0" value="{{ bulk.season }}" required
+    <div class="field"><label for="bulk-season">Season</label><input class="input" id="bulk-season" name="season" type="number" min="0" value="{{ bulk.season }}" required
       hx-get="{{ url_for('group_rows', key=bulk.key) }}" hx-trigger="change" hx-include="#panel-form" hx-target="#group-rows" hx-swap="outerHTML"></div>
     {% with oob = false %}{% include "_bulk_start.html" %}{% endwith %}
   </div>
   <template id="all-shows">{% for show in bulk.shows %}<option>{{ show }}</option>{% endfor %}</template>
   {% with show_year = bulk.show_year, new_show = bulk.new_show, oob = false %}{% include "_show_year.html" %}{% endwith %}
-  <div class="field"><label>Show description, used for a new show</label><textarea class="input" name="show_plot" rows="2" placeholder="Defaults to the first video’s description">{{ bulk.show_plot }}</textarea></div>
-  <div class="scroll">
+  <div class="field"><label for="bulk-plot">Show description, used for a new show</label><textarea class="input" id="bulk-plot" name="show_plot" rows="2" placeholder="Defaults to the first video’s description">{{ bulk.show_plot }}</textarea></div>
+  <div class="scroll" tabindex="0" role="region" aria-label="Episodes">
     <table class="table episodes">
       <thead><tr><th>Ep.</th><th>Title</th><th title="File into Season 0, shown as Specials">Special</th></tr></thead>
       {% include "_group_rows.html" %}

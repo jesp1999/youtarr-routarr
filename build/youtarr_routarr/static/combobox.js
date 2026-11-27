@@ -33,6 +33,7 @@
     list = document.createElement("ul");
     list.className = "combo-list";
     list.setAttribute("role", "listbox");
+    list.setAttribute("aria-label", "Suggestions");
     list.id = "combo-list";
     list.hidden = true;
     // mousedown, not click, so the input keeps focus.
@@ -89,10 +90,13 @@
     if (!rows.length) {
       const li = document.createElement("li");
       li.className = "combo-empty";
+      li.setAttribute("role", "option");
+      li.setAttribute("aria-disabled", "true");
       li.textContent = "No existing matches";
       ul.appendChild(li);
     }
     active = -1;
+    (input.closest("main") || document.body).appendChild(ul); // keep the list inside a landmark
     ul.hidden = false;
     input.setAttribute("aria-expanded", "true");
     input.setAttribute("aria-controls", ul.id);

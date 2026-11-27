@@ -3,6 +3,7 @@
   "use strict";
   document.documentElement.classList.add("js");
   const SCROLL = "routarr-scroll";
+  const FOCUS = "routarr-focus";
   const form = document.getElementById("select");
 
   function remember() {
@@ -20,6 +21,7 @@
       }
       const ids = boxes.filter((b) => b.checked).map((b) => b.value);
       remember();
+      sessionStorage.setItem(FOCUS, box.value);
       window.location.assign(ids.length ? `/?ids=${ids.map(encodeURIComponent).join(",")}` : "/");
     });
     // Keep the list where it was after choosing a row.
@@ -33,10 +35,21 @@
     const stacked = panel && panel.offsetTop >= form.offsetTop + form.offsetHeight;
     if (stacked && /[?&](item|ids)=/.test(window.location.search)) panel.scrollIntoView();
     else if (saved !== null) window.scrollTo(0, Number(saved));
+    // Ticking reloads the page, so put keyboard focus back on the box that was ticked.
+    const ticked = sessionStorage.getItem(FOCUS);
+    sessionStorage.removeItem(FOCUS);
+    const box = ticked && form.querySelector(`input[name="ids"][value="${CSS.escape(ticked)}"]`);
+    if (box) box.focus({ preventScroll: true });
   }
 
   const toast = document.querySelector(".toast");
   if (toast) {
-    setTimeout(() => { toast.hidden = true; }, 5000);
+    // No time limit: the message may offer Undo, so it stays until dismissed.
+    toast.querySelector(".dismiss").addEventListener("click", () => { toast.hidden = true; });
+    // Screen readers announce changes to a live region, not text that was there on load.
+    const status = toast.querySelector('[role="status"]');
+    const text = status.textContent;
+    status.textContent = "";
+    setTimeout(() => { status.textContent = text; }, 150);
   }
 })();

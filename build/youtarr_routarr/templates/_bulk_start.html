@@ -1,2 +1,2 @@
-<div class="field" id="bulk-start"{% if oob %} hx-swap-oob="true"{% endif %}><label>From ep.</label><input class="input" name="start" type="number" min="1" value="{{ bulk.start }}"
+<div class="field" id="bulk-start"{% if oob %} hx-swap-oob="true"{% endif %}><label for="bulk-first">From ep.</label><input class="input" id="bulk-first" name="start" type="number" min="1" value="{{ bulk.start }}"
   hx-get="{{ url_for('group_rows', key=bulk.key) }}" hx-trigger="change" hx-include="#panel-form" hx-target="#group-rows" hx-swap="outerHTML"></div>

@@ -1,6 +1,6 @@
 <span id="group-year" class="contents"{% if oob %} hx-swap-oob="true"{% endif %}>
   {% if new_show %}
-  <div class="field"><label>Year <span class="tag tag-accent">new show</span></label>
-    <input class="input" name="show_year" type="number" min="1800" max="2999" value="{{ show_year or '' }}" required></div>
+  <div class="field"><label for="bulk-year">Year <span class="tag tag-accent">new show</span></label>
+    <input class="input" id="bulk-year" name="show_year" type="number" min="1800" max="2999" value="{{ show_year or '' }}" required></div>
   {% endif %}
 </span>

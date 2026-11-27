@@ -1,30 +1,33 @@
 {% extends "base.html" %}
+{% block title %}Queue · Routarr{% endblock %}
+{% block skip %}{% if panel.mode != "empty" %}<a class="skip" href="#panel">Skip to the filing panel</a>{% endif %}{% endblock %}
 {% block content %}
-<main class="inbox">
+<main class="inbox" id="main" tabindex="-1">
   <section class="queue" aria-label="Queue">
     <div class="queue-head">
-      <h3>Queue</h3>
+      <h1 class="title">Queue</h1>
       <span class="text-muted small grow">{{ nav.queue }} waiting{% if aged %} · {{ aged|length }} older than {{ ping_days }} days{% endif %}</span>
       {% if selected %}<a class="btn btn-secondary" href="{{ url_for('queue') }}">Clear selection</a>{% endif %}
     </div>
+    {% if shows_on and groups %}<p id="select-help" class="text-muted tiny help">Ticking a box selects it for bulk filing and reloads the panel.</p>{% endif %}
     {% if not groups %}<p class="empty">Queue is empty. New Youtarr downloads land here.</p>{% endif %}
     <form id="select" method="get" action="{{ url_for('queue') }}">
       {% for channel, items in groups %}
       {% set episodes = items|rejectattr("audio_only")|list %}
       <div class="group">
         <div class="group-head">
-          <h6>{{ channel }}</h6>
+          <h2 class="eyebrow">{{ channel }}</h2>
           <span class="text-muted tiny grow">{{ items|length }}</span>
           {% if shows_on and episodes|length > 1 %}
             {% set ids = episodes|map(attribute="video_id")|list %}
-            {% if ids|reject("in", selected)|list %}<a class="btn btn-ghost tiny" href="/?ids={{ ids|join(',') }}">Select all {{ ids|length }}</a>
-            {% else %}<a class="btn btn-ghost tiny" href="{{ url_for('queue') }}">Deselect</a>{% endif %}
+            {% if ids|reject("in", selected)|list %}<a class="btn btn-ghost tiny" href="/?ids={{ ids|join(',') }}" aria-label="Select all {{ ids|length }} from {{ channel }}">Select all {{ ids|length }}</a>
+            {% else %}<a class="btn btn-ghost tiny" href="{{ url_for('queue') }}" aria-label="Deselect {{ channel }}">Deselect</a>{% endif %}
           {% endif %}
         </div>
         {% for item in items %}
         {% set days = ages.get(item.video_id, 0) %}
         <div class="row{% if item.video_id in selected %} selected{% endif %}" id="row-{{ item.video_id }}">
-          {% if shows_on and not item.audio_only %}<input type="checkbox" name="ids" value="{{ item.video_id }}" data-channel="{{ channel }}"{% if item.video_id in selected %} checked{% endif %} aria-label="Select {{ item.title }}">{% else %}<span></span>{% endif %}
+          {% if shows_on and not item.audio_only %}<input type="checkbox" name="ids" value="{{ item.video_id }}" data-channel="{{ channel }}"{% if item.video_id in selected %} checked{% endif %} aria-label="Select {{ item.title }}" aria-describedby="select-help">{% else %}<span></span>{% endif %}
           <a class="row-link" href="/?item={{ item.video_id }}"{% if item.video_id in selected %} aria-current="true"{% endif %}>
             <span class="thumb">{% if item.thumb %}<span class="lighten"><img loading="lazy" alt="" src="{{ url_for('thumb', video_id=item.video_id) }}"></span>{% endif %}</span>
             <span class="row-text">
@@ -44,18 +47,18 @@
     </form>
   </section>
 
-  <aside class="panel" id="panel">
+  <aside class="panel" id="panel" tabindex="-1" aria-label="Filing">
     <div class="card elev-sm panel-card">
       {% if panel.mode == "single" %}{% include "_panel_single.html" %}
       {% elif panel.mode == "bulk" %}{% include "_panel_bulk.html" %}
       {% elif panel.mode == "blocked" %}
         <div class="card-kicker">{{ panel.item.channel }} · {{ panel.item.upload_date or "No upload date" }}</div>
-        <div class="card-title">{{ panel.item.title }}</div>
+        <h2 class="card-title">{{ panel.item.title }}</h2>
         <p class="card-body">Turn on the Audio library (MUSIC_FOLDER) to file this.</p>
         {% if skip %}<div class="actions"><a class="btn btn-secondary" href="/?item={{ skip }}">Skip</a></div>{% endif %}
       {% else %}
         <div class="panel-empty">
-          <div class="card-title">Pick a download</div>
+          <h2 class="card-title">Pick a download</h2>
           <p class="card-body">Click a row to classify and file it. Tick several from one channel to file them as episodes together.</p>
         </div>
       {% endif %}

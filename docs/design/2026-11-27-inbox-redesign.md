@@ -21,6 +21,19 @@ grouped by channel beside a panel that classifies, previews and files; History; 
 - Settings & health shows the values the app receives, not the Compose settings file's names.
 - Inter is bundled, so browsers contact no outside server.
 
+## Changes from the handoff
+
+Where the handoff conflicted with WCAG 2.2 AA or with use, these take precedence:
+
+- The panel takes half the page, and a video's fixed folder prefix wraps instead of being cut off.
+- The message after filing stays until dismissed, because it can offer Undo.
+- Queue titles wrap instead of being truncated.
+- Field and control borders and the faintest text are brighter, to reach the contrast minimums.
+- The queue says that ticking a box reloads the panel, and focus returns to that box.
+- Skip links, one main heading per page and labelled controls were added.
+
+The stylesheet's tokens are unchanged; the adjustments are in `app.css`.
+
 ## Approaches
 
 | Approach | Trade-off |

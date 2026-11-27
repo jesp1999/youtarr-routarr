@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Settings &amp; health · Routarr{% endblock %}
 {% block content %}
-<main class="sheet">
+<main class="sheet" id="main" tabindex="-1">
   <div>
-    <h3>Settings &amp; health</h3>
+    <h1 class="title">Settings &amp; health</h1>
     <p class="text-muted small">Read-only. Settings live in <code>.env</code> — edit it and run <code>docker compose up -d</code>.</p>
   </div>
+  <h2 class="sr-only">Libraries</h2>
   <div class="libraries">
     {% for card in cards %}
     <div class="card elev-sm">
@@ -17,7 +18,7 @@
   </div>
   <div class="columns">
     <section class="checks">
-      <h6>Checks</h6>
+      <h2 class="eyebrow">Checks</h2>
       {% for check in checks %}
       <div class="check-row">
         <span class="tag {{ 'tag-neutral' if check.state == 'OK' else 'tag-outline' }}">{{ check.state }}</span>
@@ -26,12 +27,13 @@
       {% endfor %}
     </section>
     <section class="environment">
-      <h6>Environment</h6>
-      <div class="scroll">
+      <h2 class="eyebrow">Environment</h2>
+      <div class="scroll" tabindex="0" role="region" aria-label="Environment">
         <table class="table">
+          <thead><tr><th scope="col">Setting</th><th scope="col">Value</th><th scope="col">Note</th></tr></thead>
           <tbody>
             {% for name, value, note in environment %}
-            <tr><td class="mono key">{{ name }}</td><td class="mono">{{ value }}</td><td class="text-muted tiny">{{ note }}</td></tr>
+            <tr><th scope="row" class="mono key">{{ name }}</th><td class="mono">{{ value }}</td><td class="text-muted tiny">{{ note }}</td></tr>
             {% endfor %}
           </tbody>
         </table>

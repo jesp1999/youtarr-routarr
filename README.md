@@ -232,6 +232,13 @@ dashboards.
 - **One media mount** is deliberate. The whole of `MEDIA_ROOT` is writable by the app, so safety
   inside it depends on the app's code rather than the mount.
 
+## Accessibility
+
+The web interface aims to meet [WCAG 2.2](https://www.w3.org/TR/WCAG22/) level AA. It is checked
+with tests for page structure, the axe-core scanner on every screen, and keyboard, reflow,
+text-spacing and contrast checks in a headless browser. It has not been tried with a screen reader
+or audited independently. Please report any barrier as a bug.
+
 ## Development
 
 ```bash
